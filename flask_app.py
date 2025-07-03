@@ -1,6 +1,7 @@
 import pandas as pd
 import json
 from flask import Flask, render_template, request, json
+from flask.json.provider import DefaultJSONProvider
 from core.analysis import run_multi_year_analysis
 import os
 import numpy as np
@@ -71,11 +72,14 @@ def safe_load_tickers(file_path):
         encodings = ['utf-8', 'latin1', 'iso-8859-1']
         for encoding in encodings:
             try:
-                df = pd.read_csv(file_path, sep=';', encoding=encoding)
+                df = pd.read_csv(full_path, sep=';', encoding=encoding)  # Note que mudou para full_path
                 logger.info(f"Tickers carregados com sucesso usando codificação {encoding}")
                 return df
             except UnicodeDecodeError:
                 continue
+            except pd.errors.EmptyDataError:
+                logger.error("Arquivo de tickers está vazio")
+                return None
         
         logger.error("Falha ao decodificar arquivo de tickers com todas as codificações tentadas")
         return None
