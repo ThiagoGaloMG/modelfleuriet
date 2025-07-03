@@ -1,0 +1,6 @@
+# Arquivos de Log
+*.log
+
+# Cache do Python
+__pycache__/
+*.pyc
