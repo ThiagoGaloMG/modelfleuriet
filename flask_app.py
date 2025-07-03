@@ -1,4 +1,5 @@
 import pandas as pd
+import json
 from flask import Flask, render_template, request, json
 from core.analysis import run_multi_year_analysis
 import os
@@ -60,8 +61,11 @@ except Exception as e:
 def safe_load_tickers(file_path):
     """Carrega o arquivo de mapeamento de tickers com tratamento robusto."""
     try:
-        if not os.path.exists(file_path):
-            logger.warning(f"Arquivo de tickers não encontrado: {file_path}")
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        full_path = os.path.join(base_dir, file_path)
+        
+        if not os.path.exists(full_path):
+            logger.warning(f"Arquivo de tickers não encontrado: {full_path}")
             return None
             
         encodings = ['utf-8', 'latin1', 'iso-8859-1']
@@ -94,7 +98,7 @@ if DF_TICKERS is not None:
 
 ANALYSIS_YEARS = [2021, 2022, 2023]
 
-class CustomJSONEncoder(json.JSONEncoder):
+class CustomJSONProvider(DefaultJSONProvider):
     def default(self, obj):
         if isinstance(obj, np.integer): return int(obj)
         if isinstance(obj, np.floating): return float(obj)
@@ -102,7 +106,8 @@ class CustomJSONEncoder(json.JSONEncoder):
         if isinstance(obj, pd.Timestamp): return obj.isoformat()
         return super().default(obj)
 
-app.json_encoder = CustomJSONEncoder
+app.json_provider = CustomJSONProvider(app)
+app.json = CustomJSONProvider(app)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
