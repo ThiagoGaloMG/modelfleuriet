@@ -6,34 +6,35 @@ import numpy as np
 from sqlalchemy import create_engine, text
 import logging
 from urllib.parse import quote_plus
+from dotenv import load_dotenv
 
-# Inicializa a aplicação Flask
+load_dotenv()
+
 app = Flask(__name__)
 
-# --- CONFIGURAÇÃO DE LOGGING ---
+# Configuração de Logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('flask_app.log'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
-# --- CONFIGURAÇÃO SEGURA DO BANCO DE DADOS ---
+# Configuração do Banco de Dados via variáveis de ambiente
 DB_CONFIG = {
-    'username': "modelfleuriet",
-    'password': quote_plus("#SalveMaria1!"),  # Codifica caracteres especiais
-    'hostname': "modelfleuriet.mysql.pythonanywhere-services.com",
-    'database': "modelfleuriet$default",
+    'username': os.environ.get('DB_USER'),
+    'password': os.environ.get('DB_PASSWORD'),
+    'hostname': os.environ.get('DB_HOST'),
+    'database': os.environ.get('DB_NAME'),
     'table_name': 'financial_data'
 }
 
 def get_db_connection_string():
     """Monta a string de conexão segura para o MySQL."""
     return (
-        f"mysql+pymysql://{DB_CONFIG['username']}:{DB_CONFIG['password']}"
+        f"mysql+pymysql://{DB_CONFIG['username']}:{quote_plus(DB_CONFIG['password'])}"
         f"@{DB_CONFIG['hostname']}/{DB_CONFIG['database']}"
         "?charset=utf8mb4&connect_timeout=5"
     )
@@ -48,7 +49,6 @@ def create_db_engine():
         max_overflow=10
     )
 
-# Engine global com tratamento de reconexão
 try:
     DB_ENGINE = create_db_engine()
     logger.info("Conexão com o banco de dados inicializada com sucesso")
@@ -56,7 +56,7 @@ except Exception as e:
     logger.error(f"Falha ao conectar ao banco de dados: {str(e)}")
     DB_ENGINE = None
 
-# --- CARREGAMENTO RÁPIDO DOS DADOS PEQUENOS (APENAS TICKERS) ---
+# Carregamento dos tickers
 def safe_load_tickers(file_path):
     """Carrega o arquivo de mapeamento de tickers com tratamento robusto."""
     try:
@@ -64,7 +64,6 @@ def safe_load_tickers(file_path):
             logger.warning(f"Arquivo de tickers não encontrado: {file_path}")
             return None
             
-        # Tentar diferentes codificações com fallback
         encodings = ['utf-8', 'latin1', 'iso-8859-1']
         for encoding in encodings:
             try:
@@ -95,7 +94,6 @@ if DF_TICKERS is not None:
 
 ANALYSIS_YEARS = [2021, 2022, 2023]
 
-# Encoder JSON para lidar com tipos de dados do NumPy
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.integer): return int(obj)
@@ -114,7 +112,6 @@ def index():
 
     if request.method == 'POST':
         try:
-            # Validação segura do input
             cvm_code = request.form.get('cvm_code')
             if not cvm_code or not cvm_code.isdigit():
                 error = "Código CVM inválido ou não fornecido."
@@ -124,7 +121,6 @@ def index():
             cvm_code = int(cvm_code)
             logger.info(f"Iniciando análise para empresa CVM: {cvm_code}")
 
-            # --- CONSULTA SEGURA AO BANCO DE DADOS ---
             try:
                 query = text("SELECT * FROM financial_data WHERE CD_CVM = :cvm_code")
                 df_company = pd.read_sql(query, DB_ENGINE, params={'cvm_code': cvm_code})
@@ -141,7 +137,6 @@ def index():
                 logger.error(f"{error} Detalhes: {str(db_error)}", exc_info=True)
                 return render_template('index.html', companies=COMPANIES_LIST, error=error)
 
-            # Executa a análise
             try:
                 results, analysis_error = run_multi_year_analysis(df_company, cvm_code, ANALYSIS_YEARS)
                 
@@ -176,11 +171,12 @@ def internal_server_error(e):
     logger.error(f"Erro interno no servidor: {str(e)}", exc_info=True)
     return render_template('500.html'), 500
 
+@app.after_request
+def add_header(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Content-Security-Policy'] = "default-src 'self'"
+    return response
+
 if __name__ == '__main__':
-    # Configurações seguras para produção
-    app.run(
-        host='0.0.0.0',
-        port=5000,
-        debug=False,  # Desativado em produção
-        threaded=True
-    )
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
