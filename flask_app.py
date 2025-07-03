@@ -150,7 +150,7 @@ def index():
                     companies=COMPANIES_LIST, 
                     results=results, 
                     chart_data_json=json.dumps(results.get('chart_data', {}))
-                    
+                )
             except Exception as analysis_exception:
                 error = "Erro durante a análise dos dados."
                 logger.error(f"{error} Detalhes: {str(analysis_exception)}", exc_info=True)
