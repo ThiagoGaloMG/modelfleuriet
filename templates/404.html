@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Página Não Encontrada | Model Fleuriet</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .error-container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            text-align: center;
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        .error-code {
+            font-size: 120px;
+            font-weight: 800;
+            color: #4a6cf7;
+            line-height: 1;
+            margin-bottom: 20px;
+        }
+        
+        .error-title {
+            font-size: 32px;
+            color: #2d3748;
+            margin-bottom: 15px;
+        }
+        
+        .error-message {
+            font-size: 18px;
+            color: #718096;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        
+        .home-btn {
+            display: inline-block;
+            background: #4a6cf7;
+            color: white;
+            padding: 12px 30px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            box-shadow: 0 4px 15px rgba(74, 108, 247, 0.3);
+        }
+        
+        .home-btn:hover {
+            background: #3a5ae0;
+            transform: translateY(-3px);
+            box-shadow: 0 7px 20px rgba(74, 108, 247, 0.4);
+        }
+        
+        .logo {
+            margin-bottom: 25px;
+        }
+        
+        .logo img {
+            height: 50px;
+        }
+        
+        .illustration {
+            margin: 30px 0;
+        }
+        
+        .illustration svg {
+            max-width: 250px;
+            height: auto;
+        }
+
+        @media (max-width: 480px) {
+            .error-container {
+                padding: 30px 20px;
+            }
+            
+            .error-code {
+                font-size: 90px;
+            }
+            
+            .error-title {
+                font-size: 26px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="logo">
+            <h2>Model Fleuriet</h2>
+        </div>
+        
+        <div class="illustration">
+            <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="100" cy="100" r="80" fill="#E1E8FF" />
+                <circle cx="80" cy="80" r="10" fill="#4a6cf7" />
+                <circle cx="120" cy="80" r="10" fill="#4a6cf7" />
+                <path d="M60 130 Q100 160 140 130" stroke="#4a6cf7" stroke-width="8" fill="none" stroke-linecap="round" />
+                <path d="M100 20 L120 60 L160 60 L130 90 L140 130 L100 110 L60 130 L70 90 L40 60 L80 60 Z" 
+                      fill="#FFD166" stroke="#FFB400" stroke-width="2" />
+            </svg>
+        </div>
+        
+        <div class="error-code">404</div>
+        <h1 class="error-title">Página Não Encontrada</h1>
+        <p class="error-message">A página que você está procurando pode ter sido removida, ter seu nome alterado ou estar temporariamente indisponível.</p>
+        <a href="/" class="home-btn">Voltar à Página Inicial</a>
+    </div>
+</body>
+</html>
