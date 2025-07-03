@@ -20,7 +20,7 @@ def reclassify_and_sum(df_year: pd.DataFrame) -> Dict[str, float]:
     data = {}
     df_year['CATEGORY'] = df_year['CD_CONTA'].apply(
         lambda x: next((cat for code, cat in FLEURIET_ACCOUNT_MAPPING.items() if x.startswith(code)), None)
-    
+    )
     summary = df_year.groupby('CATEGORY')['VL_CONTA'].sum().to_dict()
     data.update(summary)
 
