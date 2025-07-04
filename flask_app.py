@@ -72,7 +72,8 @@ def safe_load_tickers(file_path):
         encodings = ['utf-8', 'latin1', 'iso-8859-1']
         for encoding in encodings:
             try:
-                df = pd.read_csv(full_path, sep=';', encoding=encoding)
+                # CORREÇÃO: Alterado o separador de ';' para ','
+                df = pd.read_csv(full_path, sep=',', encoding=encoding)
                 logger.info(f"Tickers carregados com sucesso usando codificação {encoding}")
                 
                 # Normalizar nomes de colunas
@@ -96,8 +97,8 @@ COMPANIES_LIST = []
 
 if DF_TICKERS is not None:
     try:
-        # Verificar se as colunas necessárias existem
-        required_columns = {'CD_CVM', 'TICKER', 'DENOM_CIA_F'}
+        # CORREÇÃO: Alterado 'DENOM_CIA_F' para 'NOME_EMPRESA'
+        required_columns = {'CD_CVM', 'TICKER', 'NOME_EMPRESA'}
         if not required_columns.issubset(DF_TICKERS.columns):
             missing = required_columns - set(DF_TICKERS.columns)
             logger.error(f"Colunas faltando no arquivo de tickers: {missing}")
@@ -108,7 +109,8 @@ if DF_TICKERS is not None:
             if 'TICKER' in DF_TICKERS.columns:
                 DF_TICKERS.sort_values('TICKER', inplace=True)
             
-            COMPANIES_LIST = DF_TICKERS[['TICKER', 'CD_CVM', 'DENOM_CIA_F']].to_dict('records')
+            # CORREÇÃO: Alterado 'DENOM_CIA_F' para 'NOME_EMPRESA'
+            COMPANIES_LIST = DF_TICKERS[['TICKER', 'CD_CVM', 'NOME_EMPRESA']].to_dict('records')
             logger.info(f"Carregadas {len(COMPANIES_LIST)} empresas para seleção")
     except Exception as e:
         logger.error(f"Erro ao processar lista de empresas: {str(e)}", exc_info=True)
@@ -203,7 +205,7 @@ def index():
     except Exception as e:
         error = "Ocorreu um erro inesperado."
         logger.error(f"{error} Detalhes: {str(e)}", exc_info=True)
-        return render_template('index.html', companies=companies, error=error)
+        return render_template('index.html', companies=[], error=error)
 
 @app.errorhandler(404)
 def page_not_found(e):
