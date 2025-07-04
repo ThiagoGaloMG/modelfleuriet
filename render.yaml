@@ -1,35 +1,46 @@
+# Este é um Blueprint da Render. Ele define todos os serviços e bancos de dados do seu projeto.
+# https://render.com/docs/infrastructure-as-code
+
 services:
+  # Define o Banco de Dados PostgreSQL
+  # Este bloco garante que o banco de dados seja criado se não existir.
+  - type: psql
+    name: modelfleuriet-db
+    region: oregon
+    plan: free # Mude para um plano pago em produção, se necessário
+    postgres:
+      version: 16
+
+  # Define o Serviço Web
   - type: web
     name: modelfleuriet
+    region: oregon # CRÍTICO: Mesma região do banco de dados
     env: python
-    region: sao
-    buildCommand: |
-      # Instalar dependências
-      pip install -r requirements.txt
+    plan: free # Mude para um plano pago em produção, se necessário
+    
+    # Filtro de build: só faz novo deploy se arquivos relevantes forem alterados
+    buildFilter:
+      paths:
+      - "flask_app.py"
+      - "core/**"
+      - "templates/**"
+      - "requirements.txt"
       
-      # Criar estrutura de diretórios
-      mkdir -p core data templates
-      
-      # Copiar apenas arquivos essenciais
-      cp flask_app.py .env Procfile requirements.txt runtime.txt .
-      cp core/analysis.py core/
-      cp data/* data/
-      cp templates/* templates/
-    startCommand: gunicorn flask_app:app
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn flask_app:app"
+    
+    # Variáveis de Ambiente: A forma moderna e segura
     envVars:
-      - key: DB_USER
-        value: seu_usuario
-      - key: DB_PASSWORD
-        value: sua_senha
-      - key: DB_HOST
-        value: seu_host
-      - key: DB_NAME
-        value: seu_banco
+      # Injeta automaticamente a URL de conexão INTERNA do banco de dados.
+      # Isso substitui a necessidade de DB_HOST, DB_USER, DB_PASSWORD, DB_NAME.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: modelfleuriet-db
+          property: internalUrl
+          
+      # Deixa a Render gerar e gerenciar uma chave secreta segura para você.
       - key: SECRET_KEY
-        value: sua_chave_secreta
-    ignorePaths:
-      - /dfp_cia_aberta_*.zip
-      - /.git
-      - /.gitignore
-      - /preprocess_to_db_light.py
-      - /render.yaml  # O próprio arquivo já está sendo copiado explicitamente
+        generateValue: true
+        
+      - key: PYTHON_VERSION
+        value: "3.10.13"
