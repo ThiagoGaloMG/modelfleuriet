@@ -134,10 +134,14 @@ app.json = CustomJSONProvider(app)
 @app.route('/', methods=['GET', 'POST'])
 def index():
     """Renderiza a página inicial e processa a análise sob demanda."""
-    if request.method == 'GET':
-        return render_template('index.html', companies=COMPANIES_LIST)
+    try:
+        # Garantir que COMPANIES_LIST sempre exista
+        companies = COMPANIES_LIST if COMPANIES_LIST is not None else []
+        
+        if request.method == 'GET':
+            return render_template('index.html', companies=companies)
 
-    if request.method == 'POST':
+        if request.method == 'POST':
         try:
             cvm_code = request.form.get('cvm_code')
             if not cvm_code or not cvm_code.isdigit():
@@ -181,12 +185,12 @@ def index():
             except Exception as analysis_exception:
                 error = "Erro durante a análise dos dados."
                 logger.error(f"{error} Detalhes: {str(analysis_exception)}", exc_info=True)
-                return render_template('index.html', companies=COMPANIES_LIST, error=error)
+                return render_template('index.html', companies=companies)
 
         except Exception as e:
             error = "Ocorreu um erro inesperado."
             logger.error(f"{error} Detalhes: {str(e)}", exc_info=True)
-            return render_template('index.html', companies=COMPANIES_LIST, error=error)
+            return render_template('index.html', companies=companies, error=error)
 
 @app.errorhandler(404)
 def page_not_found(e):
