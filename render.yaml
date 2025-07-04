@@ -1,35 +1,41 @@
-# Este é um Blueprint da Render. Ele define apenas o serviço web.
+# Este é um Blueprint da Render. Ele define o serviço web e um job para popular o banco de dados.
 
 services:
-  # Define o Serviço Web
+  # Define o Serviço Web principal
   - type: web
     name: modelfleuriet
-    region: oregon # CRÍTICO: Mesma região do banco de dados
+    region: oregon
     env: python
-    plan: free # Mude para um plano pago em produção, se necessário
-    
-    # Filtro de build: só faz novo deploy se arquivos relevantes forem alterados
+    plan: free
     buildFilter:
       paths:
       - "flask_app.py"
       - "core/**"
       - "templates/**"
       - "requirements.txt"
-      
     buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn flask_app:app"
-    
-    # Variáveis de Ambiente: A forma moderna e segura
     envVars:
-      # Injeta automaticamente a URL de conexão INTERNA do banco de dados existente.
       - key: DATABASE_URL
         fromDatabase:
-          name: modelfleuriet-db # <-- Refere-se ao seu banco de dados já existente
-          property: connectionString # <-- CORREÇÃO: A propriedade correta é "connectionString"
-          
-      # Deixa a Render gerar e gerenciar uma chave secreta segura para você.
+          name: modelfleuriet-db
+          property: connectionString
       - key: SECRET_KEY
         generateValue: true
-        
       - key: PYTHON_VERSION
         value: "3.10.13"
+
+  # Define um Job para popular o banco de dados
+  # Este job só roda quando você o aciona manualmente.
+  - type: job
+    name: db-populator
+    region: oregon
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python preprocess_to_db_light.py"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: modelfleuriet-db
+          property: connectionString
