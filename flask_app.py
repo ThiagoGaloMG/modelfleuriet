@@ -93,12 +93,30 @@ COMPANIES_LIST = []
 
 if DF_TICKERS is not None:
     try:
-        DF_TICKERS.drop_duplicates(subset=['CD_CVM'], inplace=True)
-        DF_TICKERS.sort_values('TICKER', inplace=True)
-        COMPANIES_LIST = DF_TICKERS[['TICKER', 'CD_CVM', 'DENOM_CIA_F']].to_dict('records')
-        logger.info(f"Carregadas {len(COMPANIES_LIST)} empresas para seleção")
+        # Verificar e normalizar nomes de colunas
+        DF_TICKERS.columns = [col.strip().upper() for col in DF_TICKERS.columns]
+        
+        # Verificar colunas necessárias
+        required_columns = {'CD_CVM', 'TICKER', 'DENOM_CIA_F'}
+        if not required_columns.issubset(DF_TICKERS.columns):
+            missing = required_columns - set(DF_TICKERS.columns)
+            logger.error(f"Colunas faltando no arquivo de tickers: {missing}")
+            COMPANIES_LIST = []
+        else:
+            DF_TICKERS.drop_duplicates(subset=['CD_CVM'], inplace=True)
+            
+            # Verificar se a coluna TICKER existe antes de ordenar
+            if 'TICKER' in DF_TICKERS.columns:
+                DF_TICKERS.sort_values('TICKER', inplace=True)
+            
+            COMPANIES_LIST = DF_TICKERS[['TICKER', 'CD_CVM', 'DENOM_CIA_F']].to_dict('records')
+            logger.info(f"Carregadas {len(COMPANIES_LIST)} empresas para seleção")
     except Exception as e:
         logger.error(f"Erro ao processar lista de empresas: {str(e)}", exc_info=True)
+        COMPANIES_LIST = []
+else:
+    logger.error("DF_TICKERS é None. Não foi possível carregar a lista de empresas.")
+    COMPANIES_LIST = []
 
 ANALYSIS_YEARS = [2021, 2022, 2023]
 
