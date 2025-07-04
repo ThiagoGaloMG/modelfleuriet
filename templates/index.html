@@ -45,19 +45,19 @@
 
         <div class="card p-4 md:p-6 mb-8">
             <form id="analysisForm" action="/" method="POST" class="flex flex-col md:flex-row items-end justify-center gap-3 md:gap-4">
-                <!-- Campo de Seleção de Empresa -->
                 <div class="w-full md:flex-1">
                     <label for="cvm_code" class="block text-sm font-medium text-gray-700 mb-1">Selecione a Empresa</label>
                     <select name="cvm_code" id="cvm_code" required
                             class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-base">
                         <option value="" disabled selected>Escolha um ticker...</option>
                         {% for company in companies %}
-                            <option value="{{ company.CD_CVM }}">{{ company.TICKER }} - {{ company.NOME_EMPRESA }}</option>
+                            <option value="{{ company.CD_CVM }}" {% if selected_company and company.CD_CVM|string == selected_company %}selected{% endif %}>
+                                {{ company.TICKER }} - {{ company.NOME_EMPRESA }}
+                            </option>
                         {% endfor %}
                     </select>
                 </div>
 
-                <!-- **NOVO** Campo de Ano de Início -->
                 <div class="w-full md:w-32">
                     <label for="start_year" class="block text-sm font-medium text-gray-700 mb-1">Ano Início</label>
                     <select name="start_year" id="start_year" required
@@ -68,7 +68,6 @@
                     </select>
                 </div>
 
-                <!-- **NOVO** Campo de Ano de Fim -->
                 <div class="w-full md:w-32">
                     <label for="end_year" class="block text-sm font-medium text-gray-700 mb-1">Ano Fim</label>
                     <select name="end_year" id="end_year" required
@@ -79,7 +78,6 @@
                     </select>
                 </div>
 
-                <!-- Botão de Análise -->
                 <div class="w-full md:w-auto mt-4 md:mt-0">
                     <button type="submit" id="submitBtn"
                             class="w-full md:w-auto bg-indigo-600 text-white font-bold py-2.5 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out flex items-center justify-center">
@@ -100,9 +98,8 @@
         {% endif %}
 
         {% if results %}
-            <!-- O resto do seu HTML para mostrar os resultados continua aqui... -->
             <div class="space-y-8">
-                <h2 class="text-2xl md:text-3xl font-bold text-center text-gray-800">{{ results.company_name }} ({{ results.cvm_code }})</h2>
+                <h2 class="text-2xl md:text-3xl font-bold text-center text-gray-800">{{ results.company_name }} (CVM: {{ results.cvm_code }})</h2>
 
                 <div class="card p-4 md:p-6">
                     <h3 class="text-lg md:text-xl font-bold mb-3 md:mb-4">Evolução Dinâmica (Efeito Tesoura)</h3>
@@ -143,26 +140,32 @@
                                     <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap font-medium text-gray-900 text-sm">{{ name }}</td>
                                     {% for res in results.yearly_results %}
                                     <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap text-right text-gray-700 text-sm">
+                                        {# Lógica para buscar o valor aninhado #}
                                         {% set keys = key.split('.') %}
                                         {% set val = res %}
-                                        {% set continue_loop = True %}
+                                        {% set found = True %}
                                         {% for k in keys %}
-                                            {% if continue_loop %}
-                                                {% if k in val %}
-                                                    {% set val = val[k] %}
-                                                {% else %}
-                                                    {% set val = "N/A" %}
-                                                    {% set continue_loop = False %}
-                                                {% endif %}
+                                            {% if found and k in val %}
+                                                {% set val = val[k] %}
+                                            {% else %}
+                                                {% set val = 'N/A' %}
+                                                {% set found = False %}
                                             {% endif %}
                                         {% endfor %}
                                         
-                                        {% if val is number and val|abs > 1000 %}
-                                            R$ {{ "{:,.0f}".format(val)|replace(',', '.') }}
-                                        {% elif val is number and 'ROIC' in name %}
-                                            {{ "%.2f"|format(val * 100) }}%
-                                        {% elif val is number %}
-                                            R$ {{ "%.2f"|format(val)|replace('.', ',') }}
+                                        {# Lógica de Formatação #}
+                                        {% if val is number %}
+                                            {% if name == 'ROIC (%)' %}
+                                                {{ "%.2f"|format(val) }}%
+                                            {% elif name in ['NCG', 'CDG', 'Tesouraria'] %}
+                                                R$ {{ "{:,.0f}".format(val)|replace(',', '.') }}
+                                            {% elif name == 'Z-Score' %}
+                                                {{ "%.4f"|format(val) }}
+                                            {% elif name == 'ILD' %}
+                                                {{ "%.2f"|format(val * 100) }}%
+                                            {% else %}
+                                                {{ val }}
+                                            {% endif %}
                                         {% else %}
                                             {{ val }}
                                         {% endif %}
@@ -200,17 +203,16 @@
                                     <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap font-medium text-sm">{{ name }}</td>
                                     {% for res in results.yearly_results %}
                                     <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap text-right text-sm">
+                                        {# Lógica para buscar o valor aninhado #}
                                         {% set keys = key.split('.') %}
                                         {% set val = res %}
-                                        {% set continue_loop = True %}
+                                        {% set found = True %}
                                         {% for k in keys %}
-                                            {% if continue_loop %}
-                                                {% if k in val %}
-                                                    {% set val = val[k] %}
-                                                {% else %}
-                                                    {% set val = "N/A" %}
-                                                    {% set continue_loop = False %}
-                                                {% endif %}
+                                            {% if found and k in val %}
+                                                {% set val = val[k] %}
+                                            {% else %}
+                                                {% set val = "N/A" %}
+                                                {% set found = False %}
                                             {% endif %}
                                         {% endfor %}
                                         
@@ -231,7 +233,7 @@
 
             <script>
                 document.addEventListener('DOMContentLoaded', function() {
-                    const chartData = JSON.parse('{{ chart_data_json | safe }}');
+                    const chartData = JSON.parse('{{ chart_data_json | tojson | safe }}');
                     
                     if (chartData && chartData.labels && chartData.labels.length > 0) {
                         const ctx = document.getElementById('tesouraChart').getContext('2d');
@@ -304,8 +306,8 @@
                                                     label += new Intl.NumberFormat('pt-BR', { 
                                                         style: 'currency', 
                                                         currency: 'BRL',
-                                                        minimumFractionDigits: 2,
-                                                        maximumFractionDigits: 2
+                                                        minimumFractionDigits: 0,
+                                                        maximumFractionDigits: 0
                                                     }).format(context.parsed.y);
                                                 }
                                                 return label;
@@ -315,12 +317,6 @@
                                 }
                             }
                         });
-                    } else {
-                        document.getElementById('tesouraChart').innerHTML = `
-                            <div class="flex items-center justify-center h-full text-gray-500">
-                                <p>Dados insuficientes para exibir o gráfico</p>
-                            </div>
-                        `;
                     }
                 });
             </script>
