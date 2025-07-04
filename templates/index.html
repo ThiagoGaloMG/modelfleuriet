@@ -6,314 +6,1149 @@
     <title>Analisador Fleuriet - B3</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { background-color: #f3f4f6; font-family: 'Inter', sans-serif; }
-       .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
-       .loader {
-            border-top-color: #3498db;
-            -webkit-animation: spinner 1.5s linear infinite;
-            animation: spinner 1.5s linear infinite;
+        :root {
+            --primary-600: #4f46e5;
+            --primary-700: #4338ca;
+            --success-500: #10b981;
+            --warning-500: #f59e0b;
+            --danger-500: #ef4444;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
         }
-        @-webkit-keyframes spinner {
-            0% { -webkit-transform: rotate(0deg); }
-            100% { -webkit-transform: rotate(360deg); }
+
+        body { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Inter', sans-serif;
+            padding: 0;
+            margin: 0;
         }
-        @keyframes spinner {
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        .hero-section {
+            background: linear-gradient(135deg, rgba(79, 70, 229, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+            border-radius: 20px;
+            padding: 3rem 2rem;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .form-card {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+
+        .metric-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        .status-optimal { background: #d1fae5; color: #065f46; }
+        .status-warning { background: #fef3c7; color: #92400e; }
+        .status-danger { background: #fee2e2; color: #991b1b; }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .loading-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #4f46e5;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        .fade-in {
+            animation: fadeIn 0.6s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 200px;
+            background-color: #1f2937;
+            color: white;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.8rem;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .risk-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .risk-low { background-color: #10b981; }
+        .risk-medium { background-color: #f59e0b; }
+        .risk-high { background-color: #ef4444; }
+
         @media (max-width: 768px) {
-           .table-container {
-                overflow-x: auto;
-                display: block;
-                width: 100%;
+            .hero-section {
+                padding: 2rem 1rem;
             }
-            table {
-                min-width: 600px;
+            
+            .form-card {
+                padding: 1.5rem;
+            }
+            
+            .chart-container {
+                height: 300px;
+                padding: 1rem;
             }
         }
     </style>
 </head>
-<body class="antialiased text-gray-800">
-
-    <div class="container mx-auto p-4 md:p-8 max-w-6xl">
-        <header class="text-center mb-8">
-            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Análise Dinâmica de Empresas</h1>
-            <p class="text-base md:text-lg text-gray-600 mt-2">Veja a evolução financeira e identifique o Efeito Tesoura.</p>
-        </header>
-
-        <div class="card p-4 md:p-6 mb-8">
-            <form id="analysisForm" action="/" method="POST" class="flex flex-col md:flex-row items-end justify-center gap-3 md:gap-4">
-                <div class="w-full md:flex-1">
-                    <label for="cvm_code" class="block text-sm font-medium text-gray-700 mb-1">Selecione a Empresa</label>
-                    <select name="cvm_code" id="cvm_code" required
-                            class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-base">
-                        <option value="" disabled {% if not selected_company %}selected{% endif %}>Escolha um ticker...</option>
-                        {% for company in companies %}
-                            <option value="{{ company.CD_CVM }}" {% if selected_company and company.CD_CVM|string == selected_company %}selected{% endif %}>
-                                {{ company.TICKER }} - {{ company.NOME_EMPRESA }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="w-full md:w-32">
-                    <label for="start_year" class="block text-sm font-medium text-gray-700 mb-1">Ano Início</label>
-                    <select name="start_year" id="start_year" required
-                            class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-base">
-                        {% set start_year = request.form.get('start_year', '2021')|int %}
-                        {% for year in range(2018, 2025) %}
-                            <option value="{{ year }}" {% if year == start_year %}selected{% endif %}>{{ year }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="w-full md:w-32">
-                    <label for="end_year" class="block text-sm font-medium text-gray-700 mb-1">Ano Fim</label>
-                    <select name="end_year" id="end_year" required
-                            class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-base">
-                        {% set end_year = request.form.get('end_year', '2023')|int %}
-                        {% for year in range(2018, 2025) %}
-                            <option value="{{ year }}" {% if year == end_year %}selected{% endif %}>{{ year }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="w-full md:w-auto mt-4 md:mt-0">
-                    <button type="submit" id="submitBtn"
-                            class="w-full md:w-auto bg-indigo-600 text-white font-bold py-2.5 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out flex items-center justify-center">
-                        <span id="btnText">Analisar Período</span>
-                        <svg id="loadingSpinner" class="hidden w-5 h-5 ml-2 text-white animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                    </button>
-                </div>
-            </form>
+<body class="antialiased">
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="text-center">
+            <div class="loading-spinner"></div>
+            <p class="text-white mt-4 text-lg">Processando análise...</p>
         </div>
+    </div>
 
-        {% if error %}
-            <div class="card p-4 text-center bg-red-100 border border-red-400 text-red-700 rounded-lg mb-8">
-                <strong>Erro:</strong> {{ error }}
+    <div class="min-h-screen py-8 px-4">
+        <div class="container mx-auto max-w-7xl">
+            <!-- Hero Section -->
+            <div class="hero-section glass-card">
+                <div class="flex items-center justify-center mb-4">
+                    <div class="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mr-4">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        </svg>
+                    </div>
+                    <h1 class="text-4xl md:text-5xl font-bold text-gray-800">Analisador Fleuriet</h1>
+                </div>
+                <p class="text-lg md:text-xl text-gray-600 max-w-3xl mx-auto">
+                    Análise financeira avançada para empresas listadas na B3. 
+                    Detecte o <strong>Efeito Tesoura</strong> e avalie a saúde financeira com precisão.
+                </p>
             </div>
-        {% endif %}
 
-        {% if results %}
-            <div class="space-y-8">
-                <h2 class="text-2xl md:text-3xl font-bold text-center text-gray-800">{{ results.company_name }} (CVM: {{ results.cvm_code }})</h2>
+            <!-- Form Section -->
+            <div class="form-card mb-8">
+                <form id="analysisForm" class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div class="md:col-span-2">
+                            <label for="cvm_code" class="block text-sm font-semibold text-gray-700 mb-2">
+                                Selecione a Empresa
+                                <span class="tooltip">
+                                    <span class="text-blue-500 ml-1">ℹ️</span>
+                                    <span class="tooltiptext">Escolha uma empresa listada na B3 para análise</span>
+                                </span>
+                            </label>
+                            <select name="cvm_code" id="cvm_code" required
+                                    class="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition-colors text-gray-700">
+                                <option value="" disabled selected>Escolha um ticker...</option>
+                                <option value="23264">ABEV3 - Ambev S.A.</option>
+                                <option value="19909">PETR4 - Petróleo Brasileiro S.A.</option>
+                                <option value="906">VALE3 - Vale S.A.</option>
+                                <option value="19615">ITUB4 - Itaú Unibanco Holding S.A.</option>
+                                <option value="17973">BBDC4 - Banco Bradesco S.A.</option>
+                                <option value="15300">WEGE3 - WEG S.A.</option>
+                                <option value="18180">SUZB3 - Suzano S.A.</option>
+                                <option value="17450">RENT3 - Localiza Rent a Car S.A.</option>
+                                <option value="21610">MGLU3 - Magazine Luiza S.A.</option>
+                                <option value="14923">JBSS3 - JBS S.A.</option>
+                            </select>
+                        </div>
 
-                <div class="card p-4 md:p-6">
-                    <h3 class="text-lg md:text-xl font-bold mb-3 md:mb-4">Evolução Dinâmica (Efeito Tesoura)</h3>
-                    <p class="text-xs md:text-sm text-gray-600 mb-3 md:mb-4">
-                        O <strong>Efeito Tesoura</strong> ocorre quando a Necessidade de Capital de Giro (NCG) cresce mais rápido que o Capital de Giro (CDG), "abrindo a tesoura" e consumindo a tesouraria. Um cruzamento da linha azul (NCG) acima da verde (CDG) é um forte sinal de alerta.
-                    </p>
-                    <div class="h-64 md:h-96">
+                        <div>
+                            <label for="start_year" class="block text-sm font-semibold text-gray-700 mb-2">
+                                Ano Início
+                            </label>
+                            <select name="start_year" id="start_year" required
+                                    class="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition-colors text-gray-700">
+                                <option value="2018">2018</option>
+                                <option value="2019">2019</option>
+                                <option value="2020">2020</option>
+                                <option value="2021" selected>2021</option>
+                                <option value="2022">2022</option>
+                                <option value="2023">2023</option>
+                                <option value="2024">2024</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label for="end_year" class="block text-sm font-semibold text-gray-700 mb-2">
+                                Ano Fim
+                            </label>
+                            <select name="end_year" id="end_year" required
+                                    class="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition-colors text-gray-700">
+                                <option value="2018">2018</option>
+                                <option value="2019">2019</option>
+                                <option value="2020">2020</option>
+                                <option value="2021">2021</option>
+                                <option value="2022">2022</option>
+                                <option value="2023" selected>2023</option>
+                                <option value="2024">2024</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-center">
+                        <button type="submit" id="submitBtn"
+                                class="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                            </svg>
+                            <span id="btnText">Analisar Período</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Error Message -->
+            <div id="errorMessage" class="hidden glass-card p-6 mb-8 border-l-4 border-red-500 bg-red-50">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <h3 class="text-sm font-medium text-red-800">Erro na Análise</h3>
+                        <p class="text-sm text-red-700 mt-1" id="errorText"></p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="resultsSection" class="hidden fade-in space-y-8">
+                <!-- Company Header -->
+                <div class="text-center glass-card p-6">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-2" id="companyName"></h2>
+                    <p class="text-lg text-gray-600" id="cvmCode"></p>
+                </div>
+
+                <!-- Key Metrics Overview -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div class="metric-card text-center">
+                        <div class="text-2xl font-bold text-blue-600 mb-2" id="latestNCG"></div>
+                        <div class="text-sm text-gray-600 mb-1">NCG - Necessidade de Capital de Giro</div>
+                        <div class="text-xs text-gray-500" id="latestYear"></div>
+                    </div>
+
+                    <div class="metric-card text-center">
+                        <div class="text-2xl font-bold text-green-600 mb-2" id="latestCDG"></div>
+                        <div class="text-sm text-gray-600 mb-1">CDG - Capital de Giro</div>
+                        <div class="text-xs text-gray-500" id="latestYear2"></div>
+                    </div>
+
+                    <div class="metric-card text-center">
+                        <div class="text-2xl font-bold text-purple-600 mb-2" id="latestZScore"></div>
+                        <div class="text-sm text-gray-600 mb-1">Z-Score de Prado</div>
+                        <div class="text-xs" id="latestZRisk"></div>
+                    </div>
+                </div>
+
+                <!-- Scissors Effect Chart -->
+                <div class="glass-card p-6">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-2xl font-bold text-gray-800">Evolução Dinâmica - Efeito Tesoura</h3>
+                        <div class="tooltip">
+                            <span class="text-blue-500 text-xl cursor-help">ℹ️</span>
+                            <span class="tooltiptext">
+                                O Efeito Tesoura ocorre quando NCG cresce mais que CDG, 
+                                "abrindo a tesoura" e consumindo liquidez
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6 rounded-r-lg">
+                        <p class="text-sm text-blue-800">
+                            <strong>Interpretação:</strong> Quando a linha azul (NCG) cruza acima da verde (CDG), 
+                            há risco de problemas de liquidez. A tesouraria (linha roxa) indica a folga financeira.
+                        </p>
+                    </div>
+
+                    <div class="chart-container">
                         <canvas id="tesouraChart"></canvas>
                     </div>
                 </div>
 
-                <div class="card p-4 md:p-6">
-                    <h3 class="text-lg md:text-xl font-bold mb-3 md:mb-4">Resumo Comparativo Anual</h3>
-                    <div class="table-container">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-3 py-2 md:px-4 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indicador</th>
-                                    {% for res in results.yearly_results %}
-                                    <th class="px-3 py-2 md:px-4 md:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{{ res.year }}</th>
-                                    {% endfor %}
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                {% set indicators_to_show = {
-                                    'Estrutura': 'structure', 
-                                    'NCG': 'base_indicators.NCG', 
-                                    'CDG': 'base_indicators.CDG', 
-                                    'Tesouraria': 'base_indicators.T',
-                                    'ILD': 'advanced_indicators.ILD', 
-                                    'ROIC (%)': 'advanced_indicators.ROIC', 
-                                    'Z-Score': 'advanced_indicators.Z_Score', 
-                                    'Risco Z-Score': 'advanced_indicators.Z_Risk'
-                                } %}
-                                
-                                {% for name, key in indicators_to_show.items() %}
-                                <tr>
-                                    <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap font-medium text-gray-900 text-sm">{{ name }}</td>
-                                    {% for res in results.yearly_results %}
-                                    <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap text-right text-gray-700 text-sm">
-                                        {# **LÓGICA CORRIGIDA** para buscar o valor aninhado #}
-                                        {% set keys = key.split('.') %}
-                                        {% set current_val = res %}
-                                        {% for k in keys %}
-                                            {% if k in current_val %}
-                                                {% set current_val = current_val[k] %}
-                                            {% else %}
-                                                {% set current_val = 'N/A' %}
-                                            {% endif %}
-                                        {% endfor %}
-                                        
-                                        {# Lógica de Formatação #}
-                                        {% if current_val is number %}
-                                            {% if name == 'ROIC (%)' %}
-                                                {{ "%.2f"|format(current_val) }}%
-                                            {% elif name in %}
-                                                R$ {{ "{:,.0f}".format(current_val)|replace(',', '.') }}
-                                            {% elif name == 'Z-Score' %}
-                                                {{ "%.4f"|format(current_val) }}
-                                            {% elif name == 'ILD' %}
-                                                {{ "%.2f"|format(current_val * 100) }}%
-                                            {% else %}
-                                                {{ current_val }}
-                                            {% endif %}
-                                        {% else %}
-                                            {{ current_val }}
-                                        {% endif %}
-                                    </td>
-                                    {% endfor %}
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                <!-- Detailed Analysis Tables -->
+                <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                    <!-- Summary Table -->
+                    <div class="glass-card p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">Resumo Comparativo Anual</h3>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200" id="summaryTable">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Indicador
+                                        </th>
+                                        <!-- Anos serão adicionados dinamicamente -->
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <!-- Dados serão adicionados dinamicamente -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                </div>
-                
-                <div class="card p-4 md:p-6">
-                    <h3 class="text-lg md:text-xl font-bold mb-3 md:mb-4">Ciclos Operacionais (Prazos Médios)</h3>
-                    <div class="table-container">
-                        <table class="min-w-full divide-y divide-gray-200">
-                            <thead class="bg-gray-50">
-                                <tr>
-                                    <th class="px-3 py-2 md:px-4 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prazo (dias)</th>
-                                    {% for res in results.yearly_results %}
-                                    <th class="px-3 py-2 md:px-4 md:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{{ res.year }}</th>
-                                    {% endfor %}
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                                {% set cycle_indicators = {
-                                    'Recebimento (PMR)': 'advanced_indicators.PMR', 
-                                    'Estocagem (PME)': 'advanced_indicators.PME', 
-                                    'Pagamento (PMP)': 'advanced_indicators.PMP', 
-                                    'Ciclo Financeiro': 'advanced_indicators.Ciclo_Financeiro'
-                                } %}
-                                
-                                {% for name, key in cycle_indicators.items() %}
-                                <tr class="{{ 'bg-gray-50 font-bold' if 'Ciclo' in name else '' }}">
-                                    <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap font-medium text-sm">{{ name }}</td>
-                                    {% for res in results.yearly_results %}
-                                    <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap text-right text-sm">
-                                        {# **LÓGICA CORRIGIDA** para buscar o valor aninhado #}
-                                        {% set keys = key.split('.') %}
-                                        {% set current_val = res %}
-                                        {% for k in keys %}
-                                            {% if k in current_val %}
-                                                {% set current_val = current_val[k] %}
-                                            {% else %}
-                                                {% set current_val = "N/A" %}
-                                            {% endif %}
-                                        {% endfor %}
-                                        
-                                        {% if current_val is number %}
-                                            {{ "%.0f"|format(current_val) }}
-                                        {% else %}
-                                            {{ current_val }}
-                                        {% endif %}
-                                    </td>
-                                    {% endfor %}
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                    
+                    <!-- Operational Cycles Table -->
+                    <div class="glass-card p-6">
+                        <h3 class="text-xl font-bold text-gray-800 mb-4">Ciclos Operacionais (Prazos Médios)</h3>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200" id="cyclesTable">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                            Prazo (dias)
+                                        </th>
+                                        <!-- Anos serão adicionados dinamicamente -->
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <!-- Dados serão adicionados dinamicamente -->
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
-
-            <script>
-                document.addEventListener('DOMContentLoaded', function() {
-                    // **LÓGICA CORRIGIDA** para passar os dados do gráfico para o JavaScript
-                    const chartData = {{ chart_data_json | tojson | safe }};
-                    
-                    if (chartData && chartData.labels && chartData.labels.length > 0) {
-                        const ctx = document.getElementById('tesouraChart').getContext('2d');
-                        new Chart(ctx, {
-                            type: 'line',
-                            data: {
-                                labels: chartData.labels,
-                                datasets:,
-                                        fill: false,
-                                        tension: 0.1
-                                    }
-                                ]
-                            },
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                scales: {
-                                    y: {
-                                        ticks: {
-                                            callback: function(value) {
-                                                if (value === null |
-
-| value === undefined) return '';
-                                                if (Math.abs(value) >= 1.0e+9) {
-                                                    return 'R$ ' + (value / 1.0e+9).toFixed(1) + 'B';
-                                                } else if (Math.abs(value) >= 1.0e+6) {
-                                                    return 'R$ ' + (value / 1.0e+6).toFixed(1) + 'M';
-                                                } else if (Math.abs(value) >= 1.0e+3) {
-                                                    return 'R$ ' + (value / 1.0e+3).toFixed(1) + 'k';
-                                                }
-                                                return 'R$ ' + value;
-                                            }
-                                        }
-                                    }
-                                },
-                                plugins: {
-                                    tooltip: {
-                                        mode: 'index',
-                                        intersect: false,
-                                        callbacks: {
-                                            label: function(context) {
-                                                let label = context.dataset.label |
-
-| '';
-                                                if (label) {
-                                                    label += ': ';
-                                                }
-                                                if (context.parsed.y!== null) {
-                                                    label += new Intl.NumberFormat('pt-BR', { 
-                                                        style: 'currency', 
-                                                        currency: 'BRL',
-                                                        minimumFractionDigits: 0,
-                                                        maximumFractionDigits: 0
-                                                    }).format(context.parsed.y);
-                                                }
-                                                return label;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    }
-                });
-            </script>
-
-        {% endif %}
+        </div>
     </div>
 
     <script>
-        // Adicionar loader durante o processamento
-        document.getElementById('analysisForm').addEventListener('submit', function() {
-            const btn = document.getElementById('submitBtn');
-            const spinner = document.getElementById('loadingSpinner');
-            const btnText = document.getElementById('btnText');
-            
-            btn.disabled = true;
-            spinner.classList.remove('hidden');
-            btnText.textContent = 'Processando...';
-        });
-    </script>
+        // Dados simulados para demonstração
+        const mockData = {
+            "ABEV3": {
+                company_name: "Ambev S.A.",
+                cvm_code: "23264",
+                yearly_results: [
+                    {
+                        year: 2021,
+                        structure: "Ótima",
+                        base_indicators: {
+                            NCG: 2500000,
+                            CDG: 15000000,
+                            T: 12500000
+                        },
+                        advanced_indicators: {
+                            ILD: 0.167,
+                            ROIC: 18.5,
+                            Z_Score: 5.2,
+                            Z_Risk: "Baixo",
+                            PMR: 35,
+                            PME: 28,
+                            PMP: 45,
+                            Ciclo_Financeiro: 18
+                        }
+                    },
+                    {
+                        year: 2022,
+                        structure: "Boa",
+                        base_indicators: {
+                            NCG: 2800000,
+                            CDG: 16500000,
+                            T: 13700000
+                        },
+                        advanced_indicators: {
+                            ILD: 0.170,
+                            ROIC: 19.2,
+                            Z_Score: 5.4,
+                            Z_Risk: "Baixo",
+                            PMR: 32,
+                            PME: 26,
+                            PMP: 42,
+                            Ciclo_Financeiro: 16
+                        }
+                    },
+                    {
+                        year: 2023,
+                        structure: "Excelente",
+                        base_indicators: {
+                            NCG: 3200000,
+                            CDG: 18000000,
+                            T: 14800000
+                        },
+                        advanced_indicators: {
+                            ILD: 0.178,
+                            ROIC: 20.1,
+                            Z_Score: 5.8,
+                            Z_Risk: "Baixo",
+                            PMR: 30,
+                            PME: 24,
+                            PMP: 40,
+                            Ciclo_Financeiro: 14
+                        }
+                    }
+                ]
+            },
+            "PETR4": {
+                company_name: "Petróleo Brasileiro S.A.",
+                cvm_code: "19909",
+                yearly_results: [
+                    {
+                        year: 2021,
+                        structure: "Risco",
+                        base_indicators: {
+                            NCG: 45000000,
+                            CDG: 35000000,
+                            T: -10000000
+                        },
+                        advanced_indicators: {
+                            ILD: 1.29,
+                            ROIC: 22.3,
+                            Z_Score: 3.1,
+                            Z_Risk: "Médio",
+                            PMR: 25,
+                            PME: 18,
+                            PMP: 30,
+                            Ciclo_Financeiro: 13
+                        }
+                    },
+                    {
+                        year: 2022,
+                        structure: "Crítica",
+                        base_indicators: {
+                            NCG: 52000000,
+                            CDG: 38000000,
+                            T: -14000000
+                        },
+                        advanced_indicators: {
+                            ILD: 1.37,
+                            ROIC: 28.7,
+                            Z_Score: 2.8,
+                            Z_Risk: "Médio",
+                            PMR: 28,
+                            PME: 20,
+                            PMP: 32,
+                            Ciclo_Financeiro: 16
+                        }
+                    },
+                    {
+                        year: 2023,
+                        structure: "Risco",
+                        base_indicators: {
+                            NCG: 48000000,
+                            CDG: 42000000,
+                            T: -6000000
+                        },
+                        advanced_indicators: {
+                            ILD: 1.14,
+                            ROIC: 25.1,
+                            Z_Score: 3.3,
+                            Z_Risk: "Médio",
+                            PMR: 26,
+                            PME: 19,
+                            PMP: 33,
+                            Ciclo_Financeiro: 12
+                        }
+                    }
+                ]
+            }
+        };
 
+        // Função para formatar valores monetários
+        function formatMoney(value) {
+            return new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(value);
+        }
+
+        // Função para analisar dados
+        function analyzeData(formData) {
+            const cvmCode = formData.get('cvm_code');
+            const startYear = parseInt(formData.get('start_year'));
+            const endYear = parseInt(formData.get('end_year'));
+            
+            // Simular busca de dados
+            const companyKey = Object.keys(mockData).find(key => 
+                mockData[key].cvm_code === cvmCode
+            );
+            
+            if (!companyKey) {
+                throw new Error('Empresa não encontrada');
+            }
+            
+            const companyData = mockData[companyKey];
+            
+            // Filtrar dados por período
+            const filteredResults = companyData.yearly_results.filter(
+                result => result.year >= startYear && result.year <= endYear
+            );
+            
+            if (filteredResults.length === 0) {
+                throw new Error('Nenhum dado encontrado para o período selecionado');
+            }
+            
+            return {
+                ...companyData,
+                yearly_results: filteredResults
+            };
+        }
+
+        // Função para mostrar resultados
+        function showResults(data) {
+            const latest = data.yearly_results[data.yearly_results.length - 1];
+            
+            // Atualizar cabeçalho
+            document.getElementById('companyName').textContent = data.company_name;
+            document.getElementById('cvmCode').textContent = `CVM: ${data.cvm_code}`;
+            
+            // Atualizar métricas principais
+            document.getElementById('latestNCG').textContent = formatMoney(latest.base_indicators.NCG);
+            document.getElementById('latestCDG').textContent = formatMoney(latest.base_indicators.CDG);
+            document.getElementById('latestZScore').textContent = 
+                latest.advanced_indicators.Z_Score !== 'N/A' ? 
+                latest.advanced_indicators.Z_Score.toFixed(2) : 'N/A';
+            
+            document.getElementById('latestYear').textContent = latest.year;
+            document.getElementById('latestYear2').textContent = latest.year;
+            
+            // Atualizar indicador de risco
+            const riskElement = document.getElementById('latestZRisk');
+            if (latest.advanced_indicators.Z_Risk !== 'N/A') {
+                const riskClass = latest.advanced_indicators.Z_Risk.includes('Baixo') ? 'risk-low' :
+                                 latest.advanced_indicators.Z_Risk.includes('Médio') ? 'risk-medium' : 'risk-high';
+                riskElement.innerHTML = `<span class="risk-indicator ${riskClass}"></span>${latest.advanced_indicators.Z_Risk}`;
+            } else {
+                riskElement.textContent = 'N/A';
+            }
+            
+            // Criar gráfico
+            createChart(data);
+            
+            // Criar tabelas
+            createTables(data);
+            
+            // Mostrar seção de resultados
+            document.getElementById('resultsSection').classList.remove('hidden');
+        }
+
+        // Função para criar gráfico
+        function createChart(data) {
+            const ctx = document.getElementById('tesouraChart').getContext('2d');
+            
+            const labels = data.yearly_results.map(r => r.year.toString());
+            const ncgData = data.yearly_results.map(r => r.base_indicators.NCG / 1000000);
+            const cdgData = data.yearly_results.map(r => r.base_indicators.CDG / 1000000);
+            const tData = data.yearly_results.map(r => r.base_indicators.T / 1000000);
+            
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'NCG - Necessidade de Capital de Giro',
+                            data: ncgData,
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 4,
+                            fill: false
+},
+                        {
+                            label: 'CDG - Capital de Giro',
+                            data: cdgData,
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            borderWidth: 4,
+                            fill: false
+                        },
+                        {
+                            label: 'T - Tesouraria',
+                            data: tData,
+                            borderColor: '#8b5cf6',
+                            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                            borderWidth: 4,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Evolução dos Indicadores Fleuriet (R$ Milhões)',
+                            font: {
+                                size: 16,
+                                weight: 'bold'
+                            }
+                        },
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 20
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': R$ ' + 
+                                           (context.parsed.y * 1000000).toLocaleString('pt-BR');
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Ano'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Valor (R$ Milhões)'
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    },
+                    elements: {
+                        point: {
+                            radius: 6,
+                            hoverRadius: 8
+                        }
+                    }
+                }
+            });
+        }
+
+        // Função para criar tabelas
+        function createTables(data) {
+            createSummaryTable(data);
+            createCyclesTable(data);
+        }
+
+        // Função para criar tabela resumo
+        function createSummaryTable(data) {
+            const table = document.getElementById('summaryTable');
+            const thead = table.querySelector('thead tr');
+            const tbody = table.querySelector('tbody');
+            
+            // Limpar tabela
+            thead.innerHTML = '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indicador</th>';
+            tbody.innerHTML = '';
+            
+            // Adicionar colunas de anos
+            data.yearly_results.forEach(result => {
+                const th = document.createElement('th');
+                th.className = 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+                th.textContent = result.year;
+                thead.appendChild(th);
+            });
+            
+            // Definir linhas da tabela
+            const rows = [
+                { 
+                    label: 'NCG (R$ mil)', 
+                    key: 'NCG', 
+                    type: 'base',
+                    format: 'money'
+                },
+                { 
+                    label: 'CDG (R$ mil)', 
+                    key: 'CDG', 
+                    type: 'base',
+                    format: 'money'
+                },
+                { 
+                    label: 'Tesouraria (R$ mil)', 
+                    key: 'T', 
+                    type: 'base',
+                    format: 'money'
+                },
+                { 
+                    label: 'Estrutura Financeira', 
+                    key: 'structure', 
+                    type: 'direct',
+                    format: 'text'
+                },
+                { 
+                    label: 'ILD (%)', 
+                    key: 'ILD', 
+                    type: 'advanced',
+                    format: 'percent'
+                },
+                { 
+                    label: 'ROIC (%)', 
+                    key: 'ROIC', 
+                    type: 'advanced',
+                    format: 'percent'
+                },
+                { 
+                    label: 'Z-Score', 
+                    key: 'Z_Score', 
+                    type: 'advanced',
+                    format: 'number'
+                },
+                { 
+                    label: 'Risco', 
+                    key: 'Z_Risk', 
+                    type: 'advanced',
+                    format: 'risk'
+                }
+            ];
+            
+            rows.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50';
+                
+                // Célula do indicador
+                const tdLabel = document.createElement('td');
+                tdLabel.className = 'px-4 py-3 text-sm font-medium text-gray-900';
+                tdLabel.textContent = row.label;
+                tr.appendChild(tdLabel);
+                
+                // Células dos valores
+                data.yearly_results.forEach(result => {
+                    const td = document.createElement('td');
+                    td.className = 'px-4 py-3 text-sm text-gray-700';
+                    
+                    let value;
+                    if (row.type === 'base') {
+                        value = result.base_indicators[row.key];
+                    } else if (row.type === 'advanced') {
+                        value = result.advanced_indicators[row.key];
+                    } else {
+                        value = result[row.key];
+                    }
+                    
+                    // Formatação baseada no tipo
+                    if (row.format === 'money') {
+                        td.textContent = formatMoney(value / 1000);
+                    } else if (row.format === 'percent') {
+                        td.textContent = typeof value === 'number' ? (value * 100).toFixed(2) + '%' : 'N/A';
+                    } else if (row.format === 'number') {
+                        td.textContent = typeof value === 'number' ? value.toFixed(2) : 'N/A';
+                    } else if (row.format === 'risk') {
+                        if (value !== 'N/A') {
+                            const riskClass = value.includes('Baixo') ? 'risk-low' :
+                                             value.includes('Médio') ? 'risk-medium' : 'risk-high';
+                            td.innerHTML = `<span class="risk-indicator ${riskClass}"></span>${value}`;
+                        } else {
+                            td.textContent = 'N/A';
+                        }
+                    } else {
+                        td.textContent = value;
+                    }
+                    
+                    tr.appendChild(td);
+                });
+                
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Função para criar tabela de ciclos
+        function createCyclesTable(data) {
+            const table = document.getElementById('cyclesTable');
+            const thead = table.querySelector('thead tr');
+            const tbody = table.querySelector('tbody');
+            
+            // Limpar tabela
+            thead.innerHTML = '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prazo (dias)</th>';
+            tbody.innerHTML = '';
+            
+            // Adicionar colunas de anos
+            data.yearly_results.forEach(result => {
+                const th = document.createElement('th');
+                th.className = 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+                th.textContent = result.year;
+                thead.appendChild(th);
+            });
+            
+            // Definir linhas da tabela
+            const cycleRows = [
+                { 
+                    label: 'PMR - Prazo Médio de Recebimento', 
+                    key: 'PMR',
+                    tooltip: 'Tempo médio para receber vendas'
+                },
+                { 
+                    label: 'PME - Prazo Médio de Estocagem', 
+                    key: 'PME',
+                    tooltip: 'Tempo médio de permanência dos estoques'
+                },
+                { 
+                    label: 'PMP - Prazo Médio de Pagamento', 
+                    key: 'PMP',
+                    tooltip: 'Tempo médio para pagar fornecedores'
+                },
+                { 
+                    label: 'Ciclo Financeiro', 
+                    key: 'Ciclo_Financeiro',
+                    tooltip: 'PMR + PME - PMP'
+                }
+            ];
+            
+            cycleRows.forEach(row => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50';
+                
+                // Célula do indicador
+                const tdLabel = document.createElement('td');
+                tdLabel.className = 'px-4 py-3 text-sm font-medium text-gray-900';
+                tdLabel.innerHTML = `
+                    <span class="tooltip">
+                        ${row.label}
+                        <span class="tooltiptext">${row.tooltip}</span>
+                    </span>
+                `;
+                tr.appendChild(tdLabel);
+                
+                // Células dos valores
+                data.yearly_results.forEach(result => {
+                    const td = document.createElement('td');
+                    td.className = 'px-4 py-3 text-sm text-gray-700';
+                    
+                    const value = result.advanced_indicators[row.key];
+                    td.textContent = typeof value === 'number' ? Math.round(value) : 'N/A';
+                    
+                    tr.appendChild(td);
+                });
+                
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Função para mostrar erro
+        function showError(message) {
+            document.getElementById('errorText').textContent = message;
+            document.getElementById('errorMessage').classList.remove('hidden');
+            document.getElementById('resultsSection').classList.add('hidden');
+        }
+
+        // Função para esconder erro
+        function hideError() {
+            document.getElementById('errorMessage').classList.add('hidden');
+        }
+
+        // Função para mostrar loading
+        function showLoading() {
+            document.getElementById('loadingOverlay').classList.add('active');
+        }
+
+        // Função para esconder loading
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.remove('active');
+        }
+
+        // Event listener para o formulário
+        document.getElementById('analysisForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const startYear = parseInt(formData.get('start_year'));
+            const endYear = parseInt(formData.get('end_year'));
+            
+            // Validação
+            if (startYear > endYear) {
+                showError('O ano de início deve ser anterior ou igual ao ano de fim.');
+                return;
+            }
+            
+            hideError();
+            showLoading();
+            
+            try {
+                // Simular delay de processamento
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                const data = analyzeData(formData);
+                showResults(data);
+                
+                // Scroll para resultados
+                document.getElementById('resultsSection').scrollIntoView({ 
+                    behavior: 'smooth' 
+                });
+                
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                hideLoading();
+            }
+        });
+
+        // Validação dinâmica dos anos
+        document.getElementById('start_year').addEventListener('change', function() {
+            const startYear = parseInt(this.value);
+            const endYearSelect = document.getElementById('end_year');
+            const endYear = parseInt(endYearSelect.value);
+            
+            if (startYear > endYear) {
+                endYearSelect.value = this.value;
+            }
+        });
+
+        document.getElementById('end_year').addEventListener('change', function() {
+            const endYear = parseInt(this.value);
+            const startYearSelect = document.getElementById('start_year');
+            const startYear = parseInt(startYearSelect.value);
+            
+            if (endYear < startYear) {
+                startYearSelect.value = this.value;
+            }
+        });
+
+        // Adicionar mais empresas ao mock data para demonstração
+        Object.assign(mockData, {
+            "906": {
+                company_name: "Vale S.A.",
+                cvm_code: "906",
+                yearly_results: [
+                    {
+                        year: 2021,
+                        structure: "Boa",
+                        base_indicators: {
+                            NCG: 8500000,
+                            CDG: 25000000,
+                            T: 16500000
+                        },
+                        advanced_indicators: {
+                            ILD: 0.12,
+                            ROIC: 15.8,
+                            Z_Score: 4.1,
+                            Z_Risk: "Risco Baixo",
+                            PMR: 42,
+                            PME: 35,
+                            PMP: 38,
+                            Ciclo_Financeiro: 39
+                        }
+                    },
+                    {
+                        year: 2022,
+                        structure: "Risco",
+                        base_indicators: {
+                            NCG: 12000000,
+                            CDG: 22000000,
+                            T: 10000000
+                        },
+                        advanced_indicators: {
+                            ILD: 0.08,
+                            ROIC: 12.3,
+                            Z_Score: 3.8,
+                            Z_Risk: "Risco Médio",
+                            PMR: 45,
+                            PME: 38,
+                            PMP: 35,
+                            Ciclo_Financeiro: 48
+                        }
+                    },
+                    {
+                        year: 2023,
+                        structure: "Ótima",
+                        base_indicators: {
+                            NCG: 9800000,
+                            CDG: 28000000,
+                            T: 18200000
+                        },
+                        advanced_indicators: {
+                            ILD: 0.15,
+                            ROIC: 17.2,
+                            Z_Score: 4.5,
+                            Z_Risk: "Risco Baixo",
+                            PMR: 40,
+                            PME: 32,
+                            PMP: 40,
+                            Ciclo_Financeiro: 32
+                        }
+                    }
+                ]
+            },
+            "19615": {
+                company_name: "Itaú Unibanco Holding S.A.",
+                cvm_code: "19615",
+                yearly_results: [
+                    {
+                        year: 2021,
+                        structure: "Excelente",
+                        base_indicators: {
+                            NCG: 15000000,
+                            CDG: 45000000,
+                            T: 30000000
+                        },
+                        advanced_indicators: {
+                            ILD: 0.18,
+                            ROIC: 22.5,
+                            Z_Score: 5.9,
+                            Z_Risk: "Risco Baixo",
+                            PMR: 28,
+                            PME: 0,
+                            PMP: 15,
+                            Ciclo_Financeiro: 13
+                        }
+                    },
+                    {
+                        year: 2022,
+                        structure: "Excelente",
+                        base_indicators: {
+                            NCG: 16500000,
+                            CDG: 48000000,
+                            T: 31500000
+                        },
+                        advanced_indicators: {
+                            ILD: 0.19,
+                            ROIC: 24.1,
+                            Z_Score: 6.2,
+                            Z_Risk: "Risco Baixo",
+                            PMR: 26,
+                            PME: 0,
+                            PMP: 12,
+                            Ciclo_Financeiro: 14
+                        }
+                    },
+                    {
+                        year: 2023,
+                        structure: "Excelente",
+                        base_indicators: {
+                            NCG: 18000000,
+                            CDG: 52000000,
+                            T: 34000000
+                        },
+                        advanced_indicators: {
+                            ILD: 0.20,
+                            ROIC: 26.3,
+                            Z_Score: 6.5,
+                            Z_Risk: "Risco Baixo",
+                            PMR: 25,
+                            PME: 0,
+                            PMP: 10,
+                            Ciclo_Financeiro: 15
+                        }
+                    }
+                ]
+            }
+        });
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Analisador Fleuriet carregado com sucesso!');
+            
+            // Adicionar animações aos cards
+            const cards = document.querySelectorAll('.metric-card, .glass-card');
+            cards.forEach((card, index) => {
+                card.style.animationDelay = `${index * 0.1}s`;
+                card.classList.add('fade-in');
+            });
+        });
+
+        // Função para exportar dados (funcionalidade futura)
+        function exportData() {
+            // Implementar exportação para CSV/Excel
+            console.log('Exportação será implementada');
+        }
+
+        // Função para comparar empresas (funcionalidade futura)
+        function compareCompanies() {
+            // Implementar comparação entre empresas
+            console.log('Comparação será implementada');
+        }
+    </script>
 </body>
 </html>
