@@ -1,15 +1,6 @@
-# Este é um Blueprint da Render. Ele define todos os serviços e bancos de dados do seu projeto.
-# https://render.com/docs/infrastructure-as-code
+# Este é um Blueprint da Render. Ele define apenas o serviço web.
 
 services:
-  # Define o Banco de Dados PostgreSQL
-  - type: postgres # CORREÇÃO: O tipo correto é "postgres", não "psql"
-    name: modelfleuriet-db
-    region: oregon
-    plan: free # Mude para um plano pago em produção, se necessário
-    postgres:
-      version: 16
-
   # Define o Serviço Web
   - type: web
     name: modelfleuriet
@@ -30,11 +21,10 @@ services:
     
     # Variáveis de Ambiente: A forma moderna e segura
     envVars:
-      # Injeta automaticamente a URL de conexão INTERNA do banco de dados.
-      # Isso substitui a necessidade de DB_HOST, DB_USER, DB_PASSWORD, DB_NAME.
+      # Injeta automaticamente a URL de conexão INTERNA do banco de dados existente.
       - key: DATABASE_URL
         fromDatabase:
-          name: modelfleuriet-db
+          name: modelfleuriet-db # <-- Refere-se ao seu banco de dados já existente
           property: internalUrl
           
       # Deixa a Render gerar e gerenciar uma chave secreta segura para você.
