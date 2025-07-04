@@ -1,6 +1,6 @@
 import pandas as pd
 import json
-from flask import Flask, render_template, request, json
+from flask import Flask, render_template, request
 from flask.json.provider import DefaultJSONProvider
 from core.analysis import run_multi_year_analysis
 import os
@@ -72,8 +72,11 @@ def safe_load_tickers(file_path):
         encodings = ['utf-8', 'latin1', 'iso-8859-1']
         for encoding in encodings:
             try:
-                df = pd.read_csv(full_path, sep=';', encoding=encoding)  # Note que mudou para full_path
+                df = pd.read_csv(full_path, sep=';', encoding=encoding)
                 logger.info(f"Tickers carregados com sucesso usando codificação {encoding}")
+                
+                # Normalizar nomes de colunas
+                df.columns = [col.strip().upper() for col in df.columns]
                 return df
             except UnicodeDecodeError:
                 continue
@@ -93,15 +96,11 @@ COMPANIES_LIST = []
 
 if DF_TICKERS is not None:
     try:
-        # Verificar e normalizar nomes de colunas
-        DF_TICKERS.columns = [col.strip().upper() for col in DF_TICKERS.columns]
-        
-        # Verificar colunas necessárias
+        # Verificar se as colunas necessárias existem
         required_columns = {'CD_CVM', 'TICKER', 'DENOM_CIA_F'}
         if not required_columns.issubset(DF_TICKERS.columns):
             missing = required_columns - set(DF_TICKERS.columns)
             logger.error(f"Colunas faltando no arquivo de tickers: {missing}")
-            COMPANIES_LIST = []
         else:
             DF_TICKERS.drop_duplicates(subset=['CD_CVM'], inplace=True)
             
@@ -141,66 +140,86 @@ def index():
         if request.method == 'GET':
             return render_template('index.html', companies=companies)
 
-        if request.method == 'POST':
-        try:
-            cvm_code = request.form.get('cvm_code')
-            if not cvm_code or not cvm_code.isdigit():
-                error = "Código CVM inválido ou não fornecido."
-                logger.warning(error)
-                return render_template('index.html', companies=COMPANIES_LIST, error=error)
-
-            cvm_code = int(cvm_code)
-            logger.info(f"Iniciando análise para empresa CVM: {cvm_code}")
-
+        elif request.method == 'POST':
             try:
-                query = text("SELECT * FROM financial_data WHERE CD_CVM = :cvm_code")
-                df_company = pd.read_sql(query, DB_ENGINE, params={'cvm_code': cvm_code})
-                
-                if df_company.empty:
-                    error = f"Nenhum dado encontrado para a empresa com CVM {cvm_code}."
+                cvm_code = request.form.get('cvm_code')
+                if not cvm_code or not cvm_code.isdigit():
+                    error = "Código CVM inválido ou não fornecido."
                     logger.warning(error)
-                    return render_template('index.html', companies=COMPANIES_LIST, error=error)
+                    return render_template('index.html', companies=companies, error=error)
+
+                cvm_code = int(cvm_code)
+                logger.info(f"Iniciando análise para empresa CVM: {cvm_code}")
+
+                try:
+                    # Verificar conexão com o banco antes de consultar
+                    if DB_ENGINE is None:
+                        error = "Banco de dados não disponível."
+                        logger.error(error)
+                        return render_template('index.html', companies=companies, error=error)
                     
-                logger.info(f"Dados carregados: {len(df_company)} registros")
-                
-            except Exception as db_error:
-                error = "Erro ao acessar o banco de dados."
-                logger.error(f"{error} Detalhes: {str(db_error)}", exc_info=True)
-                return render_template('index.html', companies=COMPANIES_LIST, error=error)
+                    query = text("SELECT * FROM financial_data WHERE CD_CVM = :cvm_code")
+                    df_company = pd.read_sql(query, DB_ENGINE, params={'cvm_code': cvm_code})
+                    
+                    if df_company.empty:
+                        error = f"Nenhum dado encontrado para a empresa com CVM {cvm_code}."
+                        logger.warning(error)
+                        return render_template('index.html', companies=companies, error=error)
+                        
+                    logger.info(f"Dados carregados: {len(df_company)} registros")
+                    
+                except Exception as db_error:
+                    error = "Erro ao acessar o banco de dados."
+                    logger.error(f"{error} Detalhes: {str(db_error)}", exc_info=True)
+                    return render_template('index.html', companies=companies, error=error)
 
-            try:
-                results, analysis_error = run_multi_year_analysis(df_company, cvm_code, ANALYSIS_YEARS)
-                
-                if analysis_error:
-                    logger.error(f"Erro na análise: {analysis_error}")
-                    return render_template('index.html', companies=COMPANIES_LIST, error=analysis_error)
-                
-                logger.info("Análise concluída com sucesso")
-                return render_template(
-                    'index.html', 
-                    companies=COMPANIES_LIST, 
-                    results=results, 
-                    chart_data_json=json.dumps(results.get('chart_data', {}))
-                )
-            except Exception as analysis_exception:
-                error = "Erro durante a análise dos dados."
-                logger.error(f"{error} Detalhes: {str(analysis_exception)}", exc_info=True)
-                return render_template('index.html', companies=companies)
+                try:
+                    results, analysis_error = run_multi_year_analysis(df_company, cvm_code, ANALYSIS_YEARS)
+                    
+                    if analysis_error:
+                        logger.error(f"Erro na análise: {analysis_error}")
+                        return render_template('index.html', companies=companies, error=analysis_error)
+                    
+                    logger.info("Análise concluída com sucesso")
+                    return render_template(
+                        'index.html', 
+                        companies=companies, 
+                        results=results, 
+                        chart_data_json=json.dumps(results.get('chart_data', {}))
+                    )
+                except Exception as analysis_exception:
+                    error = "Erro durante a análise dos dados."
+                    logger.error(f"{error} Detalhes: {str(analysis_exception)}", exc_info=True)
+                    return render_template('index.html', companies=companies, error=error)
+            
+            except Exception as e:
+                error = "Ocorreu um erro inesperado."
+                logger.error(f"{error} Detalhes: {str(e)}", exc_info=True)
+                return render_template('index.html', companies=companies, error=error)
+        
+        # Fallback para outros métodos HTTP
+        return render_template('index.html', companies=companies), 405
 
-        except Exception as e:
-            error = "Ocorreu um erro inesperado."
-            logger.error(f"{error} Detalhes: {str(e)}", exc_info=True)
-            return render_template('index.html', companies=companies, error=error)
+    except Exception as e:
+        error = "Ocorreu um erro inesperado."
+        logger.error(f"{error} Detalhes: {str(e)}", exc_info=True)
+        return render_template('index.html', companies=companies, error=error)
 
 @app.errorhandler(404)
 def page_not_found(e):
     logger.warning(f"Página não encontrada: {request.url}")
-    return render_template('404.html'), 404
+    try:
+        return render_template('404.html'), 404
+    except:
+        return "Página não encontrada", 404
 
 @app.errorhandler(500)
 def internal_server_error(e):
     logger.error(f"Erro interno no servidor: {str(e)}", exc_info=True)
-    return render_template('500.html'), 500
+    try:
+        return render_template('500.html'), 500
+    except:
+        return "Erro interno do servidor", 500
 
 @app.after_request
 def add_header(response):
