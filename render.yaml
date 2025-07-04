@@ -2,8 +2,12 @@ services:
   - type: web
     name: modelfleuriet
     env: python
-    region: sao # Região de São Paulo
-    buildCommand: pip install -r requirements.txt
+    region: sao
+    buildCommand: |
+      pip install -r requirements.txt
+      mkdir -p data templates
+      cp data/* data/ 2>/dev/null || true
+      cp templates/* templates/ 2>/dev/null || true
     startCommand: gunicorn flask_app:app
     envVars:
       - key: DB_USER
