@@ -121,12 +121,15 @@
                                     <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap text-right text-gray-700 text-sm">
                                         {% set keys = key.split('.') %}
                                         {% set val = res %}
+                                        {% set continue_loop = True %}
                                         {% for k in keys %}
-                                            {% if k in val %}
-                                                {% set val = val[k] %}
-                                            {% else %}
-                                                {% set val = "N/A" %}
-                                                {% break %}
+                                            {% if continue_loop %}
+                                                {% if k in val %}
+                                                    {% set val = val[k] %}
+                                                {% else %}
+                                                    {% set val = "N/A" %}
+                                                    {% set continue_loop = False %}
+                                                {% endif %}
                                             {% endif %}
                                         {% endfor %}
                                         
@@ -176,12 +179,15 @@
                                     <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap text-right text-sm">
                                         {% set keys = key.split('.') %}
                                         {% set val = res %}
+                                        {% set continue_loop = True %}
                                         {% for k in keys %}
-                                            {% if k in val %}
-                                                {% set val = val[k] %}
-                                            {% else %}
-                                                {% set val = "N/A" %}
-                                                {% break %}
+                                            {% if continue_loop %}
+                                                {% if k in val %}
+                                                    {% set val = val[k] %}
+                                                {% else %}
+                                                    {% set val = "N/A" %}
+                                                    {% set continue_loop = False %}
+                                                {% endif %}
                                             {% endif %}
                                         {% endfor %}
                                         
