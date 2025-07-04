@@ -4,10 +4,17 @@ services:
     env: python
     region: sao
     buildCommand: |
+      # Instalar dependências
       pip install -r requirements.txt
-      mkdir -p data templates
-      cp data/* data/ 2>/dev/null || true
-      cp templates/* templates/ 2>/dev/null || true
+      
+      # Criar estrutura de diretórios
+      mkdir -p core data templates
+      
+      # Copiar apenas arquivos essenciais
+      cp flask_app.py .env Procfile requirements.txt runtime.txt .
+      cp core/analysis.py core/
+      cp data/* data/
+      cp templates/* templates/
     startCommand: gunicorn flask_app:app
     envVars:
       - key: DB_USER
@@ -20,3 +27,9 @@ services:
         value: seu_banco
       - key: SECRET_KEY
         value: sua_chave_secreta
+    ignorePaths:
+      - /dfp_cia_aberta_*.zip
+      - /.git
+      - /.gitignore
+      - /preprocess_to_db_light.py
+      - /render.yaml  # O próprio arquivo já está sendo copiado explicitamente
