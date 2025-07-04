@@ -143,20 +143,22 @@
 
         .tooltip .tooltiptext {
             visibility: hidden;
-            width: 200px;
+            width: 280px;
             background-color: #1f2937;
             color: white;
-            text-align: center;
-            border-radius: 6px;
-            padding: 8px;
+            text-align: left;
+            border-radius: 8px;
+            padding: 12px;
             position: absolute;
-            z-index: 1;
+            z-index: 1000;
             bottom: 125%;
             left: 50%;
-            margin-left: -100px;
+            margin-left: -140px;
             opacity: 0;
             transition: opacity 0.3s;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
+            line-height: 1.4;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
         }
 
         .tooltip:hover .tooltiptext {
@@ -247,6 +249,37 @@
             border: 1px solid #ef4444;
         }
 
+        /* Seção de explicações */
+        .explanation-card {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border: 2px solid #0ea5e9;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+        }
+
+        .explanation-title {
+            color: #0c4a6e;
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .explanation-text {
+            color: #0369a1;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .icon-info {
+            width: 20px;
+            height: 20px;
+            margin-right: 8px;
+            color: #0ea5e9;
+        }
+
         @media (max-width: 768px) {
             .hero-section {
                 padding: 2rem 1rem;
@@ -264,6 +297,12 @@
             .enhanced-table thead th,
             .enhanced-table tbody td {
                 padding: 0.75rem 0.5rem;
+                font-size: 0.8rem;
+            }
+
+            .tooltip .tooltiptext {
+                width: 250px;
+                margin-left: -125px;
                 font-size: 0.8rem;
             }
         }
@@ -301,6 +340,19 @@
                 </p>
             </div>
 
+            <!-- Seção de Explicações Básicas -->
+            <div class="explanation-card mb-8">
+                <div class="explanation-title">
+                    <svg class="icon-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    O que é o Modelo Fleuriet?
+                </div>
+                <div class="explanation-text">
+                    <strong>Imagine uma empresa como uma casa:</strong> O Modelo Fleuriet é como um termômetro que mede se a casa tem dinheiro suficiente para pagar as contas do dia a dia. Ele olha para três coisas importantes: quanto dinheiro a empresa precisa para funcionar (NCG), quanto dinheiro ela tem guardado para emergências (CDG), e quanto sobra no final (Tesouraria). Quando tudo está equilibrado, a empresa está saudável!
+                </div>
+            </div>
+
             <!-- Form Section -->
             <div class="form-card mb-8">
                 <form id="analysisForm" action="/" method="POST" class="space-y-6">
@@ -310,7 +362,7 @@
                                 Selecione a Empresa
                                 <span class="tooltip">
                                     <span class="text-blue-500 ml-1">ℹ️</span>
-                                    <span class="tooltiptext">Escolha uma empresa listada na B3 para análise</span>
+                                    <span class="tooltiptext">Escolha uma empresa listada na B3 (Bolsa de Valores do Brasil) para analisar sua saúde financeira</span>
                                 </span>
                             </label>
                             <select name="cvm_code" id="cvm_code" required
@@ -325,6 +377,10 @@
                         <div>
                             <label for="start_year" class="block text-sm font-semibold text-gray-700 mb-2">
                                 Ano Início
+                                <span class="tooltip">
+                                    <span class="text-blue-500 ml-1">ℹ️</span>
+                                    <span class="tooltiptext">Escolha o primeiro ano que você quer analisar</span>
+                                </span>
                             </label>
                             <select name="start_year" id="start_year" required
                                     class="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition-colors text-gray-700">
@@ -341,6 +397,10 @@
                         <div>
                             <label for="end_year" class="block text-sm font-semibold text-gray-700 mb-2">
                                 Ano Fim
+                                <span class="tooltip">
+                                    <span class="text-blue-500 ml-1">ℹ️</span>
+                                    <span class="tooltiptext">Escolha o último ano que você quer analisar</span>
+                                </span>
                             </label>
                             <select name="end_year" id="end_year" required
                                     class="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition-colors text-gray-700">
@@ -405,7 +465,13 @@
                                         N/A
                                     {% endif %}
                                 </div>
-                                <div class="text-sm text-gray-600 mb-1">NCG - Necessidade de Capital de Giro</div>
+                                <div class="text-sm text-gray-600 mb-1 tooltip">
+                                    NCG - Necessidade de Capital de Giro
+                                    <span class="tooltiptext">
+                                        <strong>NCG é como o dinheiro que a empresa precisa para funcionar todo dia.</strong><br><br>
+                                        Imagine uma loja: ela precisa comprar produtos para vender, pagar funcionários e esperar os clientes pagarem. A NCG é exatamente esse dinheiro necessário para manter a loja funcionando enquanto espera receber das vendas.
+                                    </span>
+                                </div>
                                 <div class="text-xs text-gray-500">{{ latest.year }}</div>
                             </div>
 
@@ -417,7 +483,13 @@
                                         N/A
                                     {% endif %}
                                 </div>
-                                <div class="text-sm text-gray-600 mb-1">CDG - Capital de Giro</div>
+                                <div class="text-sm text-gray-600 mb-1 tooltip">
+                                    CDG - Capital de Giro
+                                    <span class="tooltiptext">
+                                        <strong>CDG é como uma reserva de dinheiro que a empresa tem para emergências.</strong><br><br>
+                                        É como ter uma poupança: quando a empresa precisa de dinheiro extra para pagar contas ou investir, ela usa essa reserva. Quanto maior o CDG, mais segura a empresa está.
+                                    </span>
+                                </div>
                                 <div class="text-xs text-gray-500">{{ latest.year }}</div>
                             </div>
 
@@ -429,7 +501,13 @@
                                         N/A
                                     {% endif %}
                                 </div>
-                                <div class="text-sm text-gray-600 mb-1">Z-Score de Prado</div>
+                                <div class="text-sm text-gray-600 mb-1 tooltip">
+                                    Z-Score de Prado
+                                    <span class="tooltiptext">
+                                        <strong>Z-Score é como uma nota da escola para a empresa.</strong><br><br>
+                                        Quanto maior a nota, melhor a empresa está financeiramente. É como se fosse um termômetro que mostra se a empresa está saudável (nota alta) ou se pode ter problemas (nota baixa).
+                                    </span>
+                                </div>
                                 <div class="text-xs">
                                     {% if latest.advanced_indicators.Z_Risk != 'N/A' %}
                                         {% set risk_class = 'risk-low' if 'Baixo' in latest.advanced_indicators.Z_Risk else ('risk-medium' if 'Médio' in latest.advanced_indicators.Z_Risk else 'risk-high') %}
@@ -449,17 +527,25 @@
                             <div class="tooltip">
                                 <span class="text-blue-500 text-xl cursor-help">ℹ️</span>
                                 <span class="tooltiptext">
-                                    O Efeito Tesoura ocorre quando NCG cresce mais que CDG, 
-                                    "abrindo a tesoura" e consumindo liquidez
+                                    <strong>O Efeito Tesoura é como uma tesoura se abrindo:</strong><br><br>
+                                    Quando a linha azul (dinheiro que a empresa precisa) fica acima da linha verde (dinheiro que ela tem guardado), é como se a tesoura estivesse se abrindo. Isso significa que a empresa pode ficar sem dinheiro para pagar as contas.
                                 </span>
                             </div>
                         </div>
                         
-                        <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6 rounded-r-lg">
-                            <p class="text-sm text-blue-800">
-                                <strong>Interpretação:</strong> Quando a linha azul (NCG) cruza acima da verde (CDG), 
-                                há risco de problemas de liquidez. A tesouraria (linha roxa) indica a folga financeira.
-                            </p>
+                        <div class="explanation-card mb-6">
+                            <div class="explanation-title">
+                                <svg class="icon-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                Como ler o gráfico:
+                            </div>
+                            <div class="explanation-text">
+                                <strong>🔵 Linha Azul (NCG):</strong> Quanto dinheiro a empresa precisa para funcionar<br>
+                                <strong>🟢 Linha Verde (CDG):</strong> Quanto dinheiro a empresa tem de reserva<br>
+                                <strong>🟣 Linha Roxa (Tesouraria):</strong> Quanto dinheiro sobra no final<br><br>
+                                <strong>⚠️ Atenção:</strong> Quando a linha azul cruza acima da verde, a empresa pode ter problemas para pagar as contas!
+                            </div>
                         </div>
 
                         <div class="chart-container">
@@ -496,7 +582,55 @@
                                         
                                         {% for name, key in indicators_to_show.items() %}
                                         <tr>
-                                            <td>{{ name }}</td>
+                                            <td class="tooltip">
+                                                {{ name }}
+                                                {% if 'Estrutura' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>Estrutura Financeira é como a saúde geral da empresa:</strong><br><br>
+                                                        🟢 <strong>Ótima/Excelente:</strong> Empresa muito saudável<br>
+                                                        🔵 <strong>Boa:</strong> Empresa saudável<br>
+                                                        🟡 <strong>Risco:</strong> Empresa precisa de cuidado<br>
+                                                        🔴 <strong>Ruim:</strong> Empresa com problemas sérios
+                                                    </span>
+                                                {% elif 'NCG' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>NCG - Necessidade de Capital de Giro:</strong><br><br>
+                                                        É o dinheiro que a empresa precisa para funcionar todo dia. Como o dinheiro que você precisa para comprar lanche na escola antes de receber sua mesada.
+                                                    </span>
+                                                {% elif 'CDG' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>CDG - Capital de Giro:</strong><br><br>
+                                                        É a reserva de dinheiro da empresa. Como ter dinheiro guardado no cofrinho para emergências.
+                                                    </span>
+                                                {% elif 'Tesouraria' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>Tesouraria:</strong><br><br>
+                                                        É quanto dinheiro sobra depois de pagar tudo. Como o troco que sobra depois de comprar algo.
+                                                    </span>
+                                                {% elif 'ILD' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>ILD - Índice de Liquidez Dinâmica:</strong><br><br>
+                                                        Mostra se a empresa consegue pagar suas contas rapidamente. Quanto maior, melhor!
+                                                    </span>
+                                                {% elif 'ROIC' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>ROIC - Retorno sobre Capital Investido:</strong><br><br>
+                                                        Mostra quanto dinheiro a empresa ganha para cada real investido. É como saber quanto você ganha de juros na poupança.
+                                                    </span>
+                                                {% elif 'Z-Score' in name and 'Risco' not in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>Z-Score de Prado:</strong><br><br>
+                                                        É uma nota que mostra se a empresa está saudável. Quanto maior a nota, melhor a empresa está.
+                                                    </span>
+                                                {% elif 'Risco' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>Risco Z-Score:</strong><br><br>
+                                                        🟢 <strong>Baixo:</strong> Empresa muito segura<br>
+                                                        🟡 <strong>Médio:</strong> Empresa com algum risco<br>
+                                                        🔴 <strong>Alto:</strong> Empresa com muito risco
+                                                    </span>
+                                                {% endif %}
+                                            </td>
                                             {% for res in results.yearly_results %}
                                             <td class="text-center">
                                                 {% if name == 'Estrutura' %}
@@ -532,6 +666,22 @@
                         <!-- Operational Cycles Table -->
                         <div class="glass-card p-6">
                             <h3 class="text-xl font-bold text-gray-800 mb-4">Ciclos Operacionais (Prazos Médios)</h3>
+                            
+                            <div class="explanation-card mb-4">
+                                <div class="explanation-title">
+                                    <svg class="icon-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    Entendendo os Prazos:
+                                </div>
+                                <div class="explanation-text">
+                                    <strong>PMR:</strong> Quantos dias a empresa demora para receber o dinheiro das vendas<br>
+                                    <strong>PME:</strong> Quantos dias os produtos ficam no estoque<br>
+                                    <strong>PMP:</strong> Quantos dias a empresa demora para pagar os fornecedores<br>
+                                    <strong>Ciclo Financeiro:</strong> Quantos dias a empresa fica sem dinheiro
+                                </div>
+                            </div>
+
                             <div class="table-container">
                                 <table class="enhanced-table">
                                     <thead>
@@ -555,13 +705,25 @@
                                             <td class="tooltip">
                                                 {{ name }}
                                                 {% if 'PMR' in name %}
-                                                    <span class="tooltiptext">Tempo médio para receber vendas</span>
+                                                    <span class="tooltiptext">
+                                                        <strong>PMR - Prazo Médio de Recebimento:</strong><br><br>
+                                                        É como quando você vende um brinquedo para um amigo e ele promete te pagar depois. O PMR é quantos dias você demora para receber esse dinheiro.
+                                                    </span>
                                                 {% elif 'PME' in name %}
-                                                    <span class="tooltiptext">Tempo médio de permanência dos estoques</span>
+                                                    <span class="tooltiptext">
+                                                        <strong>PME - Prazo Médio de Estocagem:</strong><br><br>
+                                                        É quanto tempo os produtos ficam guardados antes de serem vendidos. Como os brinquedos que ficam na prateleira da loja esperando alguém comprar.
+                                                    </span>
                                                 {% elif 'PMP' in name %}
-                                                    <span class="tooltiptext">Tempo médio para pagar fornecedores</span>
+                                                    <span class="tooltiptext">
+                                                        <strong>PMP - Prazo Médio de Pagamento:</strong><br><br>
+                                                        É quanto tempo a empresa demora para pagar quem vendeu produtos para ela. Como quando você compra algo e pede para pagar depois.
+                                                    </span>
                                                 {% elif 'Ciclo' in name %}
-                                                    <span class="tooltiptext">PMR + PME - PMP</span>
+                                                    <span class="tooltiptext">
+                                                        <strong>Ciclo Financeiro:</strong><br><br>
+                                                        É por quantos dias a empresa fica "sem dinheiro" esperando receber das vendas. Quanto menor, melhor para a empresa!
+                                                    </span>
                                                 {% endif %}
                                             </td>
                                             {% for res in results.yearly_results %}
