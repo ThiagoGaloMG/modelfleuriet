@@ -3,8 +3,7 @@
 
 services:
   # Define o Banco de Dados PostgreSQL
-  # Este bloco garante que o banco de dados seja criado se não existir.
-  - type: psql
+  - type: postgres # CORREÇÃO: O tipo correto é "postgres", não "psql"
     name: modelfleuriet-db
     region: oregon
     plan: free # Mude para um plano pago em produção, se necessário
