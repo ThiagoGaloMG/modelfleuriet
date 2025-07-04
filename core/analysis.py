@@ -1,6 +1,10 @@
 import pandas as pd
 from typing import Dict, Tuple, List
 import numpy as np
+import logging
+
+# Configuração do logger para este módulo
+logger = logging.getLogger(__name__)
 
 FLEURIET_ACCOUNT_MAPPING = {
     '1': 'Ativo_Total', '1.01.01': 'T_Ativo', '1.01.02': 'T_Ativo',
@@ -13,148 +17,148 @@ FLEURIET_ACCOUNT_MAPPING = {
 }
 
 def get_specific_value(df: pd.DataFrame, code: str) -> float:
+    """Busca um valor específico no DataFrame, retornando 0.0 se não encontrado."""
     row = df[df['CD_CONTA'] == code]
-    return row['VL_CONTA'].iloc[0] if not row.empty else 0.0
+    return float(row['VL_CONTA'].iloc[0]) if not row.empty else 0.0
 
-def reclassify_and_sum(df_year: pd.DataFrame) -> Dict[str, float]:
-    data = {}
-    df_year['CATEGORY'] = df_year['CD_CONTA'].apply(
-        lambda x: next((cat for code, cat in FLEURIET_ACCOUNT_MAPPING.items() if x.startswith(code)), None)
+def reclassify_and_sum(df: pd.DataFrame) -> Dict:
+    """Reclassifica as contas e soma os valores por categoria."""
+    # Garante que CD_CONTA seja string para o mapeamento
+    df['CATEGORY'] = df['CD_CONTA'].astype(str).str.strip().apply(
+        lambda x: FLEURIET_ACCOUNT_MAPPING.get(x, 'Outros')
     )
-    summary = df_year.groupby('CATEGORY')['VL_CONTA'].sum().to_dict()
-    data.update(summary)
+    summed_data = df.groupby('CATEGORY')['VL_CONTA'].sum().to_dict()
+    return summed_data
 
-    for code in ['1', '1.02', '2.02', '2.03', '1.01.03', '1.01.04', '2.01.02', '3.01', '3.02', '3.05', '3.09']:
-        category_name = FLEURIET_ACCOUNT_MAPPING.get(code, "").replace("DRE_", "").replace("AC_", "").replace("PC_", "")
-        data[category_name] = get_specific_value(df_year, code)
+def calculate_fleuriet_indicators(reclassified_data: Dict) -> Tuple[Dict, str]:
+    """Calcula os indicadores base do modelo Fleuriet."""
+    AC_Operacional = reclassified_data.get('AC_Clientes', 0.0) + reclassified_data.get('AC_Estoques', 0.0)
+    PC_Operacional = reclassified_data.get('PC_Fornecedores', 0.0)
     
-    data['Total_AC'] = data.get('Clientes', 0) + data.get('Estoques', 0) + data.get('AC', 0)
-    data['Total_PC'] = data.get('Fornecedores', 0) + data.get('PC', 0)
-    return data
+    NCG = AC_Operacional - PC_Operacional
+    
+    PL = reclassified_data.get('PL', 0.0)
+    PNC = reclassified_data.get('PNC', 0.0)
+    ANC = reclassified_data.get('ANC', 0.0)
+    
+    CDG = PL + PNC - ANC
+    T = CDG - NCG
+    
+    # Classificação da estrutura financeira
+    tipo_estrutura = "Não identificado"
+    if CDG > 0 and NCG > 0 and T > 0:
+        tipo_estrutura = "Estrutura Ótima"
+    elif CDG > 0 and NCG > 0 and T < 0:
+        tipo_estrutura = "Alto Risco Financeiro"
+    elif CDG > 0 and NCG < 0:
+        tipo_estrutura = "Baixo Risco Financeiro"
+    elif CDG < 0 and NCG < 0 and T > 0:
+        tipo_estrutura = "Estrutura Péssima (Sobra)"
+    elif CDG < 0 and NCG < 0 and T < 0:
+        tipo_estrutura = "Estrutura Péssima (Falta)"
+    elif CDG < 0 and NCG > 0:
+        tipo_estrutura = "Insolvência Total"
 
-def calculate_fleuriet_indicators(data: Dict[str, float]) -> Tuple[Dict, int]:
-    ac = data.get('Total_AC', 0.0)
-    pc = data.get('Total_PC', 0.0)
-    anc = data.get('ANC', 0.0)
-    pnc = data.get('PNC', 0.0)
-    pl = data.get('PL', 0.0)
-    
-    ncg = ac - pc
-    cdg = (pnc + pl) - anc
-    t = cdg - ncg
-    
-    indicators = {'NCG': ncg, 'CDG': cdg, 'T': t}
-    
-    tipo = 0
-    if ncg > 0 and cdg > 0 and t > 0: tipo = 2
-    elif ncg > 0 and cdg > 0 and t < 0: tipo = 3
-    elif ncg < 0 and cdg > 0: tipo = 4
-    elif ncg < 0 and cdg < 0 and t < 0: tipo = 5
-    elif ncg < 0 and cdg < 0 and t > 0: tipo = 6
-    elif ncg > 0 and cdg < 0: tipo = 1
-    
-    estrutura_map = {
-        1: "Agressiva (+NCG, -CDG, +T)",
-        2: "Equilibrada (+NCG, +CDG, +T)",
-        3: "Atenção (+NCG, +CDG, -T)",
-        4: "Conservadora (-NCG, +CDG, -T)",
-        5: "Risco (-NCG, -CDG, -T)",
-        6: "Recuperação (-NCG, -CDG, +T)"
-    }
-    
-    return indicators, estrutura_map.get(tipo, "N/C")
+    return {'NCG': NCG, 'CDG': CDG, 'T': T}, tipo_estrutura
 
-def calculate_advanced_indicators(data: Dict, base_indicators: Dict) -> Dict:
-    t = base_indicators.get('T', 0)
-    anc = data.get('ANC', 0)
-    ncg = base_indicators.get('NCG', 0)
+def calculate_advanced_indicators(reclassified_data: Dict, base_indicators: Dict) -> Dict:
+    """Calcula indicadores avançados como prazos médios e ROIC."""
+    Vendas = reclassified_data.get('DRE_Receita', 0.0)
+    Custo = reclassified_data.get('DRE_Custo', 0.0)
+    AC_Clientes = reclassified_data.get('AC_Clientes', 0.0)
+    AC_Estoques = reclassified_data.get('AC_Estoques', 0.0)
+    PC_Fornecedores = reclassified_data.get('PC_Fornecedores', 0.0)
+    LAJIR = reclassified_data.get('DRE_LucroOperacional', 0.0)
+    Ativo_Total = reclassified_data.get('Ativo_Total', 0.0)
     
-    ild = t / (anc + ncg) if (anc + ncg) != 0 else 0
-    receita_liquida = data.get('Receita', 0)
-    custo_produtos = abs(data.get('Custo', 0))
-    clientes = data.get('Clientes', 0)
-    estoques = data.get('Estoques', 0)
-    fornecedores = data.get('Fornecedores', 0)
+    Compras = Custo + AC_Estoques  # Suposição simplificada
+
+    PMR = (AC_Clientes / Vendas) * 360 if Vendas else 'N/A'
+    PME = (AC_Estoques / Custo) * 360 if Custo else 'N/A'
+    PMP = (PC_Fornecedores / Compras) * 360 if Compras else 'N/A'
     
-    pmr = (clientes / receita_liquida) * 365 if receita_liquida != 0 else 0
-    pme = (estoques / custo_produtos) * 365 if custo_produtos != 0 else 0
-    pmp = (fornecedores / custo_produtos) * 365 if custo_produtos != 0 else 0
-    ciclo_financeiro = pmr + pme - pmp
-    
-    lucro_op = data.get('LucroOperacional', 0)
-    imposto_renda = abs(data.get('ImpostoRenda', 0))
-    aliquota_ir = imposto_renda / lucro_op if lucro_op > 0 else 0
-    nopat = lucro_op * (1 - aliquota_ir)
-    capital_investido = data.get('PL', 0) + data.get('T_Passivo', 0)
-    roic = nopat / capital_investido if capital_investido != 0 else 0
-    
+    Ciclo_Financeiro = 'N/A'
+    if isinstance(PMR, float) and isinstance(PME, float) and isinstance(PMP, float):
+        Ciclo_Financeiro = PMR + PME - PMP
+
+    ROIC = (LAJIR / Ativo_Total) * 100 if Ativo_Total else 'N/A'
+    ILD = base_indicators.get('T', 0.0) / Ativo_Total if Ativo_Total else 'N/A'
+
     return {
-        'ILD': ild,
-        'PMR': pmr,
-        'PME': pme,
-        'PMP': pmp,
-        'C2C': ciclo_financeiro,
-        'Ciclo_Financeiro': ciclo_financeiro,
-        'ROIC': roic
+        'PMR': PMR, 'PME': PME, 'PMP': PMP, 'Ciclo_Financeiro': Ciclo_Financeiro,
+        'ROIC': ROIC, 'ILD': ILD
     }
 
-def calculate_z_score_prado(data: Dict, base_indicators: Dict, tipo_estrutura: int) -> Tuple[float, str]:
-    cdg = base_indicators.get('CDG', 0)
-    ncg = base_indicators.get('NCG', 0)
-    t = base_indicators.get('T', 0)
-    ativo_total = data.get('Ativo_Total', 0)
-    receita_liquida = data.get('Receita', 0)
-    t_passivo = data.get('T_Passivo', 0)
-    
-    if ativo_total == 0 or receita_liquida == 0 or ncg == 0:
-        return 0.0, "Dados insuficientes"
-    
-    X1 = cdg / ativo_total
-    X2 = ncg / receita_liquida
-    X3 = tipo_estrutura
-    X4 = t / abs(ncg) if ncg != 0 else 0
-    X5 = t_passivo / ativo_total
-    
-    Z = 1.887 + (0.899 * X1) + (0.971 * X2) - (0.444 * X3) + (0.055 * X4) - (0.980 * X5)
-    
-    if Z > 2.675: risco = "Classe A (Risco Mínimo)"
-    elif Z > 2.0: risco = "Classe B"
-    elif Z > 1.5: risco = "Classe C"
-    elif Z > 1.0: risco = "Classe D (Atenção)"
-    else: risco = "Classe E (Risco Elevado)"
-    
-    return Z, risco
+def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> Tuple[float, str]:
+    """Calcula o Z-Score de Prado para predição de insolvência."""
+    try:
+        Ativo_Total = reclassified_data.get('Ativo_Total', 0.0)
+        if Ativo_Total == 0:
+            return 'N/A', 'Ativo Total é zero'
 
-def run_multi_year_analysis(df: pd.DataFrame, cvm_code: int, years: List[int]):
-    company_df = df[df['CD_CVM'] == cvm_code].copy()
-    
-    if company_df.empty:
-        return None, f"Empresa com CVM {cvm_code} não encontrada nos dados."
-    
-    company_name = company_df['DENOM_CIA'].iloc[0]
+        Lucro_Retido = reclassified_data.get('PL', 0.0) - reclassified_data.get('DRE_LucroLiquido', 0.0)
+        LAJIR = reclassified_data.get('DRE_LucroOperacional', 0.0)
+        PL = reclassified_data.get('PL', 0.0)
+        Passivo_Total = reclassified_data.get('PC', 0.0) + reclassified_data.get('PNC', 0.0)
+        Vendas = reclassified_data.get('DRE_Receita', 0.0)
+
+        X1 = (base_indicators.get('CDG', 0.0) - base_indicators.get('NCG', 0.0)) / Ativo_Total
+        X2 = Lucro_Retido / Ativo_Total
+        X3 = LAJIR / Ativo_Total
+        X4 = PL / Passivo_Total if Passivo_Total else 0.0
+        X5 = Vendas / Ativo_Total
+
+        # Garante que todos os componentes são numéricos antes do cálculo
+        if any(not isinstance(x, (int, float)) for x in [X1, X2, X3, X4, X5]):
+             logger.warning(f"Cálculo do Z-Score pulado devido a valores não numéricos.")
+             return 'N/A', 'Dados insuficientes'
+
+        Z = 1.887 + (0.899 * X1) + (0.971 * X2) - (0.444 * X3) + (0.055 * X4) - (0.980 * X5)
+        
+        z_risk = "Risco Baixo"
+        if Z < 4.35: z_risk = "Risco Médio"
+        if Z < 2.9: z_risk = "Risco Elevado"
+            
+        return round(Z, 4), z_risk
+    except Exception as e:
+        logger.error(f"Erro inesperado no cálculo do Z-Score: {e}")
+        return 'N/A', 'Erro de cálculo'
+
+def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List[int]) -> Tuple[Dict, str]:
+    """Orquestra a análise completa para uma empresa ao longo de vários anos."""
     all_results = []
-    
+    company_name = company_df['DENOM_CIA'].iloc[0] if not company_df.empty else f"Empresa CVM {cvm_code}"
+
+    company_df['DT_REFER'] = pd.to_datetime(company_df['DT_REFER'])
+
     for year in sorted(years):
-        reference_date = f"{year}-12-31"
-        df_year = company_df[company_df['DT_REFER'] == reference_date]
+        reference_date = pd.to_datetime(f"{year}-12-31")
+        
+        # **A CORREÇÃO PRINCIPAL**: Cria uma cópia explícita para evitar o SettingWithCopyWarning
+        df_year = company_df[company_df['DT_REFER'] == reference_date].copy()
         
         if df_year.empty:
+            logger.warning(f"Nenhum dado encontrado para o ano {year} para a empresa CVM {cvm_code}.")
             continue
         
-        reclassified_data = reclassify_and_sum(df_year)
-        base_indicators, tipo_estrutura = calculate_fleuriet_indicators(reclassified_data)
-        advanced_indicators = calculate_advanced_indicators(reclassified_data, base_indicators)
-        z_score, z_risk = calculate_z_score_prado(reclassified_data, base_indicators, tipo_estrutura)
-        
-        advanced_indicators['Z_Score'] = z_score
-        advanced_indicators['Z_Risk'] = z_risk
-        
-        all_results.append({
-            'year': year,
-            'base_indicators': base_indicators,
-            'advanced_indicators': advanced_indicators,
-            'structure': tipo_estrutura
-        })
+        try:
+            reclassified_data = reclassify_and_sum(df_year)
+            base_indicators, tipo_estrutura = calculate_fleuriet_indicators(reclassified_data)
+            advanced_indicators = calculate_advanced_indicators(reclassified_data, base_indicators)
+            z_score, z_risk = calculate_z_score_prado(reclassified_data, base_indicators)
+            
+            advanced_indicators['Z_Score'] = z_score
+            advanced_indicators['Z_Risk'] = z_risk
+            
+            all_results.append({
+                'year': year,
+                'base_indicators': base_indicators,
+                'advanced_indicators': advanced_indicators,
+                'structure': tipo_estrutura
+            })
+        except Exception as e:
+            logger.error(f"Erro ao processar o ano {year} para a empresa CVM {cvm_code}: {e}", exc_info=True)
+            return None, f"Erro ao analisar o ano {year}. Verifique os logs."
     
     if not all_results:
         return None, f"Não foram encontrados dados anuais para a empresa CVM {cvm_code} no período de {min(years)} a {max(years)}."
@@ -166,9 +170,11 @@ def run_multi_year_analysis(df: pd.DataFrame, cvm_code: int, years: List[int]):
         't': [res['base_indicators']['T'] for res in all_results],
     }
     
-    return {
+    final_result = {
         'company_name': company_name,
         'cvm_code': cvm_code,
         'yearly_results': all_results,
         'chart_data': chart_data
-    }, None
+    }
+
+    return final_result, None
