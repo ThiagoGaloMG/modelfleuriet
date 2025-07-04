@@ -499,36 +499,26 @@
                                             <td>{{ name }}</td>
                                             {% for res in results.yearly_results %}
                                             <td class="text-center">
-                                                {% set keys = key.split('.') %}
-                                                {% set val = res %}
-                                                {% set continue_loop = True %}
-                                                {% for k in keys %}
-                                                    {% if continue_loop %}
-                                                        {% if k in val %}
-                                                            {% set val = val[k] %}
-                                                        {% else %}
-                                                            {% set val = "N/A" %}
-                                                            {% set continue_loop = False %}
-                                                        {% endif %}
-                                                    {% endif %}
-                                                {% endfor %}
-                                                
                                                 {% if name == 'Estrutura' %}
-                                                    {% set structure_class = 'structure-optimal' if 'Ótima' in val or 'Excelente' in val else ('structure-good' if 'Boa' in val else ('structure-warning' if 'Risco' in val else 'structure-danger')) %}
-                                                    <span class="status-badge {{ structure_class }}">{{ val }}</span>
-                                                {% elif val is number and val|abs > 1000 and 'mil' in name %}
-                                                    R$ {{ "{:,.0f}".format(val / 1000) }}
-                                                {% elif val is number and 'ROIC' in name %}
-                                                    {{ "%.2f"|format(val) }}%
-                                                {% elif val is number and 'ILD' in name %}
-                                                    {{ "%.4f"|format(val) }}
-                                                {% elif val is number and 'Z-Score' in name %}
-                                                    {{ "%.2f"|format(val) }}
-                                                {% elif 'Risco' in name and val != 'N/A' %}
-                                                    {% set risk_class = 'risk-low' if 'Baixo' in val else ('risk-medium' if 'Médio' in val else 'risk-high') %}
-                                                    <span class="risk-indicator {{ risk_class }}"></span>{{ val }}
+                                                    {% set structure_class = 'structure-optimal' if 'Ótima' in res.structure or 'Excelente' in res.structure else ('structure-good' if 'Boa' in res.structure else ('structure-warning' if 'Risco' in res.structure else 'structure-danger')) %}
+                                                    <span class="status-badge {{ structure_class }}">{{ res.structure }}</span>
+                                                {% elif 'NCG' in name %}
+                                                    R$ {{ "{:,.0f}".format(res.base_indicators.NCG / 1000) }}
+                                                {% elif 'CDG' in name %}
+                                                    R$ {{ "{:,.0f}".format(res.base_indicators.CDG / 1000) }}
+                                                {% elif 'Tesouraria' in name %}
+                                                    R$ {{ "{:,.0f}".format(res.base_indicators.T / 1000) }}
+                                                {% elif 'ILD' in name %}
+                                                    {{ "%.4f"|format(res.advanced_indicators.ILD) }}
+                                                {% elif 'ROIC' in name %}
+                                                    {{ "%.2f"|format(res.advanced_indicators.ROIC) }}%
+                                                {% elif 'Z-Score' in name and 'Risco' not in name %}
+                                                    {{ "%.2f"|format(res.advanced_indicators.Z_Score) }}
+                                                {% elif 'Risco' in name %}
+                                                    {% set risk_class = 'risk-low' if 'Baixo' in res.advanced_indicators.Z_Risk else ('risk-medium' if 'Médio' in res.advanced_indicators.Z_Risk else 'risk-high') %}
+                                                    <span class="risk-indicator {{ risk_class }}"></span>{{ res.advanced_indicators.Z_Risk }}
                                                 {% else %}
-                                                    {{ val }}
+                                                    N/A
                                                 {% endif %}
                                             </td>
                                             {% endfor %}
@@ -576,24 +566,16 @@
                                             </td>
                                             {% for res in results.yearly_results %}
                                             <td class="text-center">
-                                                {% set keys = key.split('.') %}
-                                                {% set val = res %}
-                                                {% set continue_loop = True %}
-                                                {% for k in keys %}
-                                                    {% if continue_loop %}
-                                                        {% if k in val %}
-                                                            {% set val = val[k] %}
-                                                        {% else %}
-                                                            {% set val = "N/A" %}
-                                                            {% set continue_loop = False %}
-                                                        {% endif %}
-                                                    {% endif %}
-                                                {% endfor %}
-                                                
-                                                {% if val is number %}
-                                                    {{ "%.0f"|format(val) }}
+                                                {% if 'PMR' in name %}
+                                                    {{ "%.0f"|format(res.advanced_indicators.PMR) }}
+                                                {% elif 'PME' in name %}
+                                                    {{ "%.0f"|format(res.advanced_indicators.PME) }}
+                                                {% elif 'PMP' in name %}
+                                                    {{ "%.0f"|format(res.advanced_indicators.PMP) }}
+                                                {% elif 'Ciclo' in name %}
+                                                    {{ "%.0f"|format(res.advanced_indicators.Ciclo_Financeiro) }}
                                                 {% else %}
-                                                    {{ val }}
+                                                    N/A
                                                 {% endif %}
                                             </td>
                                             {% endfor %}
