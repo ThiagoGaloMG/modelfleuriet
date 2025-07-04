@@ -10,90 +10,132 @@
     <style>
         body { background-color: #f3f4f6; font-family: 'Inter', sans-serif; }
         .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        .loader {
+            border-top-color: #3498db;
+            -webkit-animation: spinner 1.5s linear infinite;
+            animation: spinner 1.5s linear infinite;
+        }
+        @-webkit-keyframes spinner {
+            0% { -webkit-transform: rotate(0deg); }
+            100% { -webkit-transform: rotate(360deg); }
+        }
+        @keyframes spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @media (max-width: 640px) {
+            .table-container {
+                overflow-x: auto;
+                display: block;
+                width: 100%;
+            }
+            table {
+                min-width: 600px;
+            }
+        }
     </style>
 </head>
 <body class="antialiased text-gray-800">
 
     <div class="container mx-auto p-4 md:p-8 max-w-6xl">
         <header class="text-center mb-8">
-            <h1 class="text-4xl font-bold text-gray-900">Análise Dinâmica de Empresas</h1>
-            <p class="text-lg text-gray-600 mt-2">Veja a evolução financeira e identifique o Efeito Tesoura.</p>
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Análise Dinâmica de Empresas</h1>
+            <p class="text-base md:text-lg text-gray-600 mt-2">Veja a evolução financeira e identifique o Efeito Tesoura.</p>
         </header>
 
-        <div class="card p-6 mb-8">
-            <form action="/" method="POST" class="flex flex-col md:flex-row items-end justify-center gap-4">
+        <div class="card p-4 md:p-6 mb-8">
+            <form id="analysisForm" action="/" method="POST" class="flex flex-col md:flex-row items-end justify-center gap-3 md:gap-4">
                 <div class="w-full md:flex-1">
-                    <label for="cvm_code" class="block text-sm font-medium text-gray-700">Selecione a Empresa</label>
+                    <label for="cvm_code" class="block text-sm font-medium text-gray-700 mb-1">Selecione a Empresa</label>
                     <select name="cvm_code" id="cvm_code" required
-                           class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                           class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 text-base">
                         <option value="" disabled selected>Escolha um ticker...</option>
                         {% for company in companies %}
                             <option value="{{ company.CD_CVM }}">{{ company.TICKER }} - {{ company.DENOM_CIA_F }}</option>
                         {% endfor %}
                     </select>
                 </div>
-                <div class="w-full md:w-auto">
-                     <button type="submit"
-                        class="w-full md:w-auto bg-indigo-600 text-white font-bold py-2.5 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
-                        Analisar Período
+                <div class="w-full md:w-auto mt-3 md:mt-0">
+                    <button type="submit" id="submitBtn"
+                        class="w-full md:w-auto bg-indigo-600 text-white font-bold py-2.5 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out flex items-center justify-center">
+                        <span id="btnText">Analisar Período</span>
+                        <svg id="loadingSpinner" class="hidden w-5 h-5 ml-2 text-white animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
                     </button>
                 </div>
             </form>
         </div>
 
         {% if error %}
-            <div class="card p-4 text-center bg-red-100 border border-red-400 text-red-700 rounded-lg">
+            <div class="card p-4 text-center bg-red-100 border border-red-400 text-red-700 rounded-lg mb-8">
                 <strong>Erro:</strong> {{ error }}
             </div>
         {% endif %}
 
         {% if results %}
             <div class="space-y-8">
-                <h2 class="text-3xl font-bold text-center text-gray-800">{{ results.company_name }} ({{ results.cvm_code }})</h2>
+                <h2 class="text-2xl md:text-3xl font-bold text-center text-gray-800">{{ results.company_name }} ({{ results.cvm_code }})</h2>
 
                 <!-- Card do Gráfico - Efeito Tesoura -->
-                <div class="card p-6">
-                    <h3 class="text-xl font-bold mb-4">Evolução Dinâmica (Efeito Tesoura)</h3>
-                    <p class="text-sm text-gray-600 mb-4">
+                <div class="card p-4 md:p-6">
+                    <h3 class="text-lg md:text-xl font-bold mb-3 md:mb-4">Evolução Dinâmica (Efeito Tesoura)</h3>
+                    <p class="text-xs md:text-sm text-gray-600 mb-3 md:mb-4">
                         O <strong>Efeito Tesoura</strong> ocorre quando a Necessidade de Capital de Giro (NCG) cresce mais rápido que o Capital de Giro (CDG), "abrindo a tesoura" e consumindo a tesouraria. Um cruzamento da linha azul (NCG) acima da verde (CDG) é um forte sinal de alerta.
                     </p>
-                    <div class="h-96">
+                    <div class="h-64 md:h-96">
                         <canvas id="tesouraChart"></canvas>
                     </div>
                 </div>
 
                 <!-- Tabela Comparativa Anual -->
-                <div class="card p-6">
-                    <h3 class="text-xl font-bold mb-4">Resumo Comparativo Anual</h3>
-                    <div class="overflow-x-auto">
+                <div class="card p-4 md:p-6">
+                    <h3 class="text-lg md:text-xl font-bold mb-3 md:mb-4">Resumo Comparativo Anual</h3>
+                    <div class="table-container">
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indicador</th>
+                                    <th class="px-3 py-2 md:px-4 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indicador</th>
                                     {% for res in results.yearly_results %}
-                                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{{ res.year }}</th>
+                                    <th class="px-3 py-2 md:px-4 md:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{{ res.year }}</th>
                                     {% endfor %}
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
                                 {% set indicators_to_show = {
-                                    'Estrutura': 'structure', 'NCG': 'base_indicators.NCG', 'CDG': 'base_indicators.CDG', 'Tesouraria': 'base_indicators.T',
-                                    'ILD': 'advanced_indicators.ILD', 'ROIC (%)': 'advanced_indicators.ROIC', 'Z-Score': 'advanced_indicators.Z_Score', 'Risco Z-Score': 'advanced_indicators.Z_Risk'
+                                    'Estrutura': 'structure', 
+                                    'NCG': 'base_indicators.NCG', 
+                                    'CDG': 'base_indicators.CDG', 
+                                    'Tesouraria': 'base_indicators.T',
+                                    'ILD': 'advanced_indicators.ILD', 
+                                    'ROIC (%)': 'advanced_indicators.ROIC', 
+                                    'Z-Score': 'advanced_indicators.Z_Score', 
+                                    'Risco Z-Score': 'advanced_indicators.Z_Risk'
                                 } %}
+                                
                                 {% for name, key in indicators_to_show.items() %}
                                 <tr>
-                                    <td class="px-4 py-4 whitespace-nowrap font-medium text-gray-900">{{ name }}</td>
+                                    <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap font-medium text-gray-900 text-sm">{{ name }}</td>
                                     {% for res in results.yearly_results %}
-                                    <td class="px-4 py-4 whitespace-nowrap text-right text-gray-700">
+                                    <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap text-right text-gray-700 text-sm">
+                                        {% set keys = key.split('.') %}
                                         {% set val = res %}
-                                        {% for k in key.split('.') %}{% set val = val[k] %}{% endfor %}
+                                        {% for k in keys %}
+                                            {% if k in val %}
+                                                {% set val = val[k] %}
+                                            {% else %}
+                                                {% set val = "N/A" %}
+                                                {% break %}
+                                            {% endif %}
+                                        {% endfor %}
                                         
                                         {% if val is number and val|abs > 1000 %}
-                                            {{ "{:,.0f}".format(val)|replace(',', '.') }}
+                                            R$ {{ "{:,.0f}".format(val)|replace(',', '.') }}
                                         {% elif val is number and 'ROIC' in name %}
-                                            {{ "%.2f"|format(val * 100) }}
+                                            {{ "%.2f"|format(val * 100) }}%
                                         {% elif val is number %}
-                                            {{ "%.2f"|format(val) }}
+                                            R$ {{ "%.2f"|format(val)|replace('.', ',') }}
                                         {% else %}
                                             {{ val }}
                                         {% endif %}
@@ -107,31 +149,47 @@
                 </div>
                 
                 <!-- Card de Ciclos Operacionais -->
-                <div class="card p-6">
-                    <h3 class="text-xl font-bold mb-4">Ciclos Operacionais (Prazos Médios)</h3>
-                    <div class="overflow-x-auto">
+                <div class="card p-4 md:p-6">
+                    <h3 class="text-lg md:text-xl font-bold mb-3 md:mb-4">Ciclos Operacionais (Prazos Médios)</h3>
+                    <div class="table-container">
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50">
                                 <tr>
-                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prazo (dias)</th>
+                                    <th class="px-3 py-2 md:px-4 md:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prazo (dias)</th>
                                     {% for res in results.yearly_results %}
-                                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{{ res.year }}</th>
+                                    <th class="px-3 py-2 md:px-4 md:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{{ res.year }}</th>
                                     {% endfor %}
                                 </tr>
                             </thead>
                             <tbody class="bg-white divide-y divide-gray-200">
                                 {% set cycle_indicators = {
-                                    'Recebimento (PMR)': 'advanced_indicators.PMR', 'Estocagem (PME)': 'advanced_indicators.PME', 
-                                    'Pagamento (PMP)': 'advanced_indicators.PMP', 'Ciclo Financeiro': 'advanced_indicators.Ciclo_Financeiro'
+                                    'Recebimento (PMR)': 'advanced_indicators.PMR', 
+                                    'Estocagem (PME)': 'advanced_indicators.PME', 
+                                    'Pagamento (PMP)': 'advanced_indicators.PMP', 
+                                    'Ciclo Financeiro': 'advanced_indicators.Ciclo_Financeiro'
                                 } %}
+                                
                                 {% for name, key in cycle_indicators.items() %}
-                                <tr class="{{ 'bg-gray-100 font-bold' if 'Ciclo' in name else '' }}">
-                                    <td class="px-4 py-4 whitespace-nowrap font-medium">{{ name }}</td>
+                                <tr class="{{ 'bg-gray-50 font-bold' if 'Ciclo' in name else '' }}">
+                                    <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap font-medium text-sm">{{ name }}</td>
                                     {% for res in results.yearly_results %}
-                                    <td class="px-4 py-4 whitespace-nowrap text-right">
+                                    <td class="px-3 py-2 md:px-4 md:py-4 whitespace-nowrap text-right text-sm">
+                                        {% set keys = key.split('.') %}
                                         {% set val = res %}
-                                        {% for k in key.split('.') %}{% set val = val[k] %}{% endfor %}
-                                        {{ "%.0f"|format(val) }}
+                                        {% for k in keys %}
+                                            {% if k in val %}
+                                                {% set val = val[k] %}
+                                            {% else %}
+                                                {% set val = "N/A" %}
+                                                {% break %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        
+                                        {% if val is number %}
+                                            {{ "%.0f"|format(val) }}
+                                        {% else %}
+                                            {{ val }}
+                                        {% endif %}
                                     </td>
                                     {% endfor %}
                                 </tr>
@@ -143,86 +201,116 @@
             </div>
 
             <script>
-                const chartData = JSON.parse('{{ chart_data_json | safe }}');
-                const ctx = document.getElementById('tesouraChart').getContext('2d');
-                new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: chartData.labels,
-                        datasets: [
-                            {
-                                label: 'NCG (Necessidade de Capital de Giro)',
-                                data: chartData.ncg,
-                                borderColor: 'rgba(59, 130, 246, 1)',
-                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                borderWidth: 3,
-                                fill: false,
-                                tension: 0.1
+                document.addEventListener('DOMContentLoaded', function() {
+                    const chartData = JSON.parse('{{ chart_data_json | safe }}');
+                    
+                    if (chartData && chartData.labels && chartData.labels.length > 0) {
+                        const ctx = document.getElementById('tesouraChart').getContext('2d');
+                        new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: chartData.labels,
+                                datasets: [
+                                    {
+                                        label: 'NCG (Necessidade de Capital de Giro)',
+                                        data: chartData.ncg,
+                                        borderColor: 'rgba(59, 130, 246, 1)',
+                                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                        borderWidth: 3,
+                                        fill: false,
+                                        tension: 0.1
+                                    },
+                                    {
+                                        label: 'CDG (Capital de Giro)',
+                                        data: chartData.cdg,
+                                        borderColor: 'rgba(16, 185, 129, 1)',
+                                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                        borderWidth: 3,
+                                        fill: false,
+                                        tension: 0.1
+                                    },
+                                    {
+                                        label: 'Tesouraria (T)',
+                                        data: chartData.t,
+                                        borderColor: 'rgba(139, 92, 246, 1)',
+                                        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                                        borderWidth: 2,
+                                        borderDash: [5, 5],
+                                        fill: false,
+                                        tension: 0.1
+                                    }
+                                ]
                             },
-                            {
-                                label: 'CDG (Capital de Giro)',
-                                data: chartData.cdg,
-                                borderColor: 'rgba(16, 185, 129, 1)',
-                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                                borderWidth: 3,
-                                fill: false,
-                                tension: 0.1
-                            },
-                            {
-                                label: 'Tesouraria (T)',
-                                data: chartData.t,
-                                borderColor: 'rgba(139, 92, 246, 1)',
-                                backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                                borderWidth: 2,
-                                borderDash: [5, 5],
-                                fill: false,
-                                tension: 0.1
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            y: {
-                                ticks: {
-                                    callback: function(value, index, values) {
-                                        if (Math.abs(value) >= 1.0e+9) {
-                                            return 'R$ ' + (value / 1.0e+9).toFixed(1) + 'B';
-                                        } else if (Math.abs(value) >= 1.0e+6) {
-                                            return 'R$ ' + (value / 1.0e+6).toFixed(1) + 'M';
-                                        } else if (Math.abs(value) >= 1.0e+3) {
-                                            return 'R$ ' + (value / 1.0e+3).toFixed(1) + 'k';
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    y: {
+                                        ticks: {
+                                            callback: function(value) {
+                                                if (value === null || value === undefined) return '';
+                                                if (Math.abs(value) >= 1.0e+9) {
+                                                    return 'R$ ' + (value / 1.0e+9).toFixed(1) + 'B';
+                                                } else if (Math.abs(value) >= 1.0e+6) {
+                                                    return 'R$ ' + (value / 1.0e+6).toFixed(1) + 'M';
+                                                } else if (Math.abs(value) >= 1.0e+3) {
+                                                    return 'R$ ' + (value / 1.0e+3).toFixed(1) + 'k';
+                                                }
+                                                return 'R$ ' + value;
+                                            }
                                         }
-                                        return 'R$ ' + value;
+                                    }
+                                },
+                                plugins: {
+                                    tooltip: {
+                                        mode: 'index',
+                                        intersect: false,
+                                        callbacks: {
+                                            label: function(context) {
+                                                let label = context.dataset.label || '';
+                                                if (label) {
+                                                    label += ': ';
+                                                }
+                                                if (context.parsed.y !== null) {
+                                                    label += new Intl.NumberFormat('pt-BR', { 
+                                                        style: 'currency', 
+                                                        currency: 'BRL',
+                                                        minimumFractionDigits: 2,
+                                                        maximumFractionDigits: 2
+                                                    }).format(context.parsed.y);
+                                                }
+                                                return label;
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        },
-                        plugins: {
-                            tooltip: {
-                                mode: 'index',
-                                intersect: false,
-                                callbacks: {
-                                    label: function(context) {
-                                        let label = context.dataset.label || '';
-                                        if (label) {
-                                            label += ': ';
-                                        }
-                                        if (context.parsed.y !== null) {
-                                            label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.y);
-                                        }
-                                        return label;
-                                    }
-                                }
-                            }
-                        }
+                        });
+                    } else {
+                        document.getElementById('tesouraChart').innerHTML = `
+                            <div class="flex items-center justify-center h-full text-gray-500">
+                                <p>Dados insuficientes para exibir o gráfico</p>
+                            </div>
+                        `;
                     }
                 });
             </script>
 
         {% endif %}
     </div>
+
+    <script>
+        // Adicionar loader durante o processamento
+        document.getElementById('analysisForm').addEventListener('submit', function() {
+            const btn = document.getElementById('submitBtn');
+            const spinner = document.getElementById('loadingSpinner');
+            const btnText = document.getElementById('btnText');
+            
+            btn.disabled = true;
+            spinner.classList.remove('hidden');
+            btnText.textContent = 'Processando...';
+        });
+    </script>
 
 </body>
 </html>
