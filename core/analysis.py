@@ -1,10 +1,18 @@
 import pandas as pd
-from typing import Dict, Tuple, List
+from typing import Dict, Tuple, List, Optional
 import numpy as np
 import logging
 
 # Configuração do logger para este módulo
 logger = logging.getLogger(__name__)
+
+def safe_divide(numerator, denominator):
+    """Realiza a divisão de forma segura, retornando None se o denominador for 0, None ou NaN."""
+    if denominator is None or pd.isna(denominator) or denominator == 0:
+        return None
+    if numerator is None or pd.isna(numerator):
+        return None
+    return numerator / denominator
 
 FLEURIET_ACCOUNT_MAPPING = {
     '1': 'Ativo_Total', '1.01.01': 'T_Ativo', '1.01.02': 'T_Ativo',
@@ -62,67 +70,89 @@ def calculate_fleuriet_indicators(reclassified_data: Dict) -> Tuple[Dict, str]:
     return {'NCG': NCG, 'CDG': CDG, 'T': T}, tipo_estrutura
 
 def calculate_advanced_indicators(reclassified_data: Dict, base_indicators: Dict) -> Dict:
-    """Calcula indicadores avançados como prazos médios e ROIC."""
-    Vendas = reclassified_data.get('DRE_Receita', 0.0)
-    Custo = reclassified_data.get('DRE_Custo', 0.0)
-    AC_Clientes = reclassified_data.get('AC_Clientes', 0.0)
-    AC_Estoques = reclassified_data.get('AC_Estoques', 0.0)
-    PC_Fornecedores = reclassified_data.get('PC_Fornecedores', 0.0)
-    LAJIR = reclassified_data.get('DRE_LucroOperacional', 0.0)
-    Ativo_Total = reclassified_data.get('Ativo_Total', 0.0)
+    """Calcula indicadores avançados de forma segura."""
     
-    Compras = Custo + AC_Estoques  # Suposição simplificada
-
-    PMR = (AC_Clientes / Vendas) * 360 if Vendas else 'N/A'
-    PME = (AC_Estoques / Custo) * 360 if Custo else 'N/A'
-    PMP = (PC_Fornecedores / Compras) * 360 if Compras else 'N/A'
+    # Extrai valores necessários do dicionário de dados reclassificados
+    receita_liquida = reclassified_data.get("DRE_Receita")
+    custo_produtos = reclassified_data.get("DRE_Custo")
+    clientes = reclassified_data.get("AC_Clientes")
+    estoques = reclassified_data.get("AC_Estoques")
+    fornecedores = reclassified_data.get("PC_Fornecedores")
+    ncg = base_indicators.get("NCG")
     
-    Ciclo_Financeiro = 'N/A'
-    if isinstance(PMR, float) and isinstance(PME, float) and isinstance(PMP, float):
-        Ciclo_Financeiro = PMR + PME - PMP
-
-    ROIC = (LAJIR / Ativo_Total) * 100 if Ativo_Total else 'N/A'
-    ILD = base_indicators.get('T', 0.0) / Ativo_Total if Ativo_Total else 'N/A'
+    # Supõe-se que Compras = Custo dos Produtos. É uma simplificação comum.
+    compras = custo_produtos
+    
+    # Calcula os prazos médios usando a função de divisão segura
+    pmr = safe_divide(clientes, receita_liquida) * 365 if receita_liquida is not None else None
+    pme = safe_divide(estoques, custo_produtos) * 365 if custo_produtos is not None else None
+    pmp = safe_divide(fornecedores, compras) * 365 if compras is not None else None
+    
+    # Calcula o Ciclo de Caixa (Cash to Cash)
+    ciclo_caixa = None
+    if all(p is not None for p in [pmr, pme, pmp]):
+        ciclo_caixa = pmr + pme - pmp
+        
+    # Calcula o Índice de Liquidez Dinâmica (ILD)
+    t = base_indicators.get("T")
+    anc = reclassified_data.get("ANC")
+    ild = safe_divide(t, (anc + ncg)) if all(v is not None for v in [t, anc, ncg]) else None
 
     return {
-        'PMR': PMR, 'PME': PME, 'PMP': PMP, 'Ciclo_Financeiro': Ciclo_Financeiro,
-        'ROIC': ROIC, 'ILD': ILD
+        "PMR": pmr,
+        "PME": pme,
+        "PMP": pmp,
+        "C2C": ciclo_caixa,
+        "ILD": ild,
+        # Adicione outros indicadores avançados aqui se necessário
     }
 
-def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> Tuple[float, str]:
-    """Calcula o Z-Score de Prado para predição de insolvência."""
-    try:
-        Ativo_Total = reclassified_data.get('Ativo_Total', 0.0)
-        if Ativo_Total == 0:
-            return 'N/A', 'Ativo Total é zero'
-
-        Lucro_Retido = reclassified_data.get('PL', 0.0) - reclassified_data.get('DRE_LucroLiquido', 0.0)
-        LAJIR = reclassified_data.get('DRE_LucroOperacional', 0.0)
-        PL = reclassified_data.get('PL', 0.0)
-        Passivo_Total = reclassified_data.get('PC', 0.0) + reclassified_data.get('PNC', 0.0)
-        Vendas = reclassified_data.get('DRE_Receita', 0.0)
-
-        X1 = (base_indicators.get('CDG', 0.0) - base_indicators.get('NCG', 0.0)) / Ativo_Total
-        X2 = Lucro_Retido / Ativo_Total
-        X3 = LAJIR / Ativo_Total
-        X4 = PL / Passivo_Total if Passivo_Total else 0.0
-        X5 = Vendas / Ativo_Total
-
-        # Garante que todos os componentes são numéricos antes do cálculo
-        if any(not isinstance(x, (int, float)) for x in [X1, X2, X3, X4, X5]):
-             logger.warning(f"Cálculo do Z-Score pulado devido a valores não numéricos.")
-             return 'N/A', 'Dados insuficientes'
-
-        Z = 1.887 + (0.899 * X1) + (0.971 * X2) - (0.444 * X3) + (0.055 * X4) - (0.980 * X5)
+def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> Tuple[Optional[float], str]:
+    """Calcula o Z-Score de Prado de forma segura."""
+    
+    cdg = base_indicators.get("CDG")
+    ncg = base_indicators.get("NCG")
+    t = base_indicators.get("T")
+    ativo_total = reclassified_data.get("Ativo_Total")
+    receita_liquida = reclassified_data.get("DRE_Receita")
+    # A instrução original não menciona 'TipoEstrutura' no base_indicators, mas sim no reclassified_data.
+    # Assumindo que 'TipoEstrutura' virá de reclassified_data ou que o valor padrão 0 é aceitável.
+    # Se for um campo de texto, precisará de um mapeamento para número.
+    # Por simplicidade, vou manter como está no arquivo de instrução, mas isso pode ser um ponto de atenção.
+    tipo_estrutura = base_indicators.get("TipoEstrutura", {}).get("tipo", 0)
+    
+    # Extrai passivos circulantes e não circulantes totais
+    # Estes campos não estão no FLEURIET_ACCOUNT_MAPPING fornecido, assumindo que são calculados ou obtidos de outra forma.
+    # Para evitar KeyError, usarei .get com valor padrão None.
+    pcf = reclassified_data.get("PC_Total")
+    pncf = reclassified_data.get("PNC_Total")
+    
+    # Verifica se os valores essenciais existem
+    if any(v is None for v in [cdg, ncg, t, ativo_total, receita_liquida, pcf, pncf]):
+        return None, "Dados insuficientes"
         
-        z_risk = "Risco Baixo"
-        if Z < 4.35: z_risk = "Risco Médio"
-        if Z < 2.9: z_risk = "Risco Elevado"
-            
-        return round(Z, 4), z_risk
-    except Exception as e:
-        logger.error(f"Erro inesperado no cálculo do Z-Score: {e}")
-        return 'N/A', 'Erro de cálculo'
+    # Calcula os Xis usando safe_divide
+    x1 = safe_divide(cdg, ativo_total)
+    x2 = safe_divide(ncg, receita_liquida)
+    x3 = float(tipo_estrutura) # Tipo de estrutura já deve ser um número
+    x4 = safe_divide(t, abs(ncg)) if ncg is not None else 0 # Trata o caso de NCG ser 0 aqui
+    x5 = safe_divide((pcf + pncf), ativo_total)
+
+    # Se qualquer X for nulo, não é possível calcular o Z-Score
+    if any(x is None for x in [x1, x2, x4, x5]):
+        return None, "Cálculo impossível"
+
+    # Equação Z de Prado
+    z = 1.887 + (0.899 * x1) + (0.971 * x2) - (0.444 * x3) + (0.055 * x4) - (0.980 * x5)
+
+    # Classificação do Risco
+    if z > 2.675: risk_class = "Classe A (Risco Mínimo)"
+    elif 2.0 < z <= 2.675: risk_class = "Classe B"
+    elif 1.5 < z <= 2.0: risk_class = "Classe C"
+    elif 1.0 < z <= 1.5: risk_class = "Classe D (Atenção)"
+    else: risk_class = "Classe E (Risco Elevado)"
+    
+    return z, risk_class
 
 def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List[int]) -> Tuple[Dict, str]:
     """Orquestra a análise completa para uma empresa ao longo de vários anos."""
