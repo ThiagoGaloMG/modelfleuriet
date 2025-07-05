@@ -637,20 +637,57 @@
                                                     {% set structure_class = 'structure-optimal' if 'Ótima' in res.structure or 'Excelente' in res.structure else ('structure-good' if 'Boa' in res.structure else ('structure-warning' if 'Risco' in res.structure else 'structure-danger')) %}
                                                     <span class="status-badge {{ structure_class }}">{{ res.structure }}</span>
                                                 {% elif 'NCG' in name %}
+                                                    <td class="text-center">
+                                                {% if res.base_indicators.NCG is not none %}
                                                     R$ {{ "{:,.0f}".format(res.base_indicators.NCG / 1000) }}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
                                                 {% elif 'CDG' in name %}
+                                                    <td class="text-center">
+                                                {% if res.base_indicators.CDG is not none %}
                                                     R$ {{ "{:,.0f}".format(res.base_indicators.CDG / 1000) }}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
                                                 {% elif 'Tesouraria' in name %}
+                                                    <td class="text-center">
+                                                {% if res.base_indicators.T is not none %}
                                                     R$ {{ "{:,.0f}".format(res.base_indicators.T / 1000) }}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
                                                 {% elif 'ILD' in name %}
+                                                    <td class="text-center">
+                                                {% if res.advanced_indicators.ILD is not none %}
                                                     {{ "%.4f"|format(res.advanced_indicators.ILD) }}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
                                                 {% elif 'ROIC' in name %}
+                                                    <td class="text-center">
+                                                {% if res.advanced_indicators.ROIC is not none %}
                                                     {{ "%.2f"|format(res.advanced_indicators.ROIC) }}%
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
                                                 {% elif 'Z-Score' in name and 'Risco' not in name %}
+                                                    <td class="text-center">
+                                                {% if res.advanced_indicators.Z_Score is not none %}
                                                     {{ "%.2f"|format(res.advanced_indicators.Z_Score) }}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
                                                 {% elif 'Risco' in name %}
-                                                    {% set risk_class = 'risk-low' if 'Baixo' in res.advanced_indicators.Z_Risk else ('risk-medium' if 'Médio' in res.advanced_indicators.Z_Risk else 'risk-high') %}
-                                                    <span class="risk-indicator {{ risk_class }}"></span>{{ res.advanced_indicators.Z_Risk }}
+                                                    <td class="text-center">
+                                                {{ res.advanced_indicators.Z_Risk if res.advanced_indicators.Z_Risk is not none else 'N/A' }}
+                                            </td>
                                                 {% else %}
                                                     N/A
                                                 {% endif %}
@@ -729,13 +766,37 @@
                                             {% for res in results.yearly_results %}
                                             <td class="text-center">
                                                 {% if 'PMR' in name %}
+                                                    <td class="text-center">
+                                                {% if res.advanced_indicators.PMR is not none %}
                                                     {{ "%.0f"|format(res.advanced_indicators.PMR) }}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
                                                 {% elif 'PME' in name %}
+                                                    <td class="text-center">
+                                                {% if res.advanced_indicators.PME is not none %}
                                                     {{ "%.0f"|format(res.advanced_indicators.PME) }}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
                                                 {% elif 'PMP' in name %}
+                                                    <td class="text-center">
+                                                {% if res.advanced_indicators.PMP is not none %}
                                                     {{ "%.0f"|format(res.advanced_indicators.PMP) }}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
                                                 {% elif 'Ciclo' in name %}
+                                                    <td class="text-center">
+                                                {% if res.advanced_indicators.Ciclo_Financeiro is not none %}
                                                     {{ "%.0f"|format(res.advanced_indicators.Ciclo_Financeiro) }}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
                                                 {% else %}
                                                     N/A
                                                 {% endif %}
