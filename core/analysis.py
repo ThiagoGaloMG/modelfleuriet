@@ -79,6 +79,9 @@ def calculate_advanced_indicators(reclassified_data: Dict, base_indicators: Dict
     estoques = reclassified_data.get("AC_Estoques")
     fornecedores = reclassified_data.get("PC_Fornecedores")
     ncg = base_indicators.get("NCG")
+    lucro_operacional = reclassified_data.get("DRE_LucroOperacional")
+    imposto_renda = reclassified_data.get("DRE_ImpostoRenda")
+    ativo_total = reclassified_data.get("Ativo_Total")
     
     # Supõe-se que Compras = Custo dos Produtos. É uma simplificação comum.
     compras = custo_produtos
@@ -96,7 +99,17 @@ def calculate_advanced_indicators(reclassified_data: Dict, base_indicators: Dict
     # Calcula o Índice de Liquidez Dinâmica (ILD)
     t = base_indicators.get("T")
     anc = reclassified_data.get("ANC")
-    ild = safe_divide(t, (anc + ncg)) if all(v is not None for v in [t, anc, ncg]) else None
+    ild = safe_divide(t, (anc + ncg)) if all(v is not None for v in [t, anc, ncg]) and (anc + ncg) != 0 else None
+
+    # Calcula o ROIC (Return on Invested Capital)
+    # NOPAT = Lucro Operacional - Imposto de Renda sobre o Lucro Operacional
+    # Capital Investido = Ativo Total - Passivo Circulante Operacional (PC_Fornecedores)
+    # Assumindo que o imposto de renda é sobre o lucro operacional para o cálculo do NOPAT
+    roic = None
+    if lucro_operacional is not None and imposto_renda is not None and ativo_total is not None and fornecedores is not None:
+        nopat = lucro_operacional - imposto_renda
+        capital_investido = ativo_total - fornecedores # Simplificação: Capital Investido = Ativo Total - Fornecedores
+        roic = safe_divide(nopat, capital_investido) * 100 if capital_investido != 0 else None
 
     return {
         "PMR": pmr,
@@ -104,7 +117,7 @@ def calculate_advanced_indicators(reclassified_data: Dict, base_indicators: Dict
         "PMP": pmp,
         "C2C": ciclo_caixa,
         "ILD": ild,
-        # Adicione outros indicadores avançados aqui se necessário
+        "ROIC": roic,
     }
 
 def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> Tuple[Optional[float], str]:
@@ -115,17 +128,27 @@ def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> T
     t = base_indicators.get("T")
     ativo_total = reclassified_data.get("Ativo_Total")
     receita_liquida = reclassified_data.get("DRE_Receita")
+    
     # A instrução original não menciona 'TipoEstrutura' no base_indicators, mas sim no reclassified_data.
     # Assumindo que 'TipoEstrutura' virá de reclassified_data ou que o valor padrão 0 é aceitável.
     # Se for um campo de texto, precisará de um mapeamento para número.
     # Por simplicidade, vou manter como está no arquivo de instrução, mas isso pode ser um ponto de atenção.
-    tipo_estrutura = base_indicators.get("TipoEstrutura", {}).get("tipo", 0)
-    
+    # Para o cálculo do Z-Score, 'tipo_estrutura' deve ser um valor numérico.
+    # Se 'tipo_estrutura' for uma string como "Estrutura Ótima", precisamos mapeá-la para um número.
+    # Por enquanto, vou usar um valor padrão 0 se não for encontrado ou não for numérico.
+    tipo_estrutura_str = base_indicators.get("TipoEstrutura", {}).get("tipo", "Não identificado")
+    tipo_estrutura = 0 # Valor padrão
+    if "Ótima" in tipo_estrutura_str or "Excelente" in tipo_estrutura_str: tipo_estrutura = 4
+    elif "Boa" in tipo_estrutura_str: tipo_estrutura = 3
+    elif "Risco" in tipo_estrutura_str: tipo_estrutura = 2
+    elif "Péssima" in tipo_estrutura_str or "Insolvência" in tipo_estrutura_str: tipo_estrutura = 1
+
     # Extrai passivos circulantes e não circulantes totais
     # Estes campos não estão no FLEURIET_ACCOUNT_MAPPING fornecido, assumindo que são calculados ou obtidos de outra forma.
     # Para evitar KeyError, usarei .get com valor padrão None.
-    pcf = reclassified_data.get("PC_Total")
-    pncf = reclassified_data.get("PNC_Total")
+    # Adicionei PC e PNC ao mapeamento FLEURIET_ACCOUNT_MAPPING para que possam ser obtidos.
+    pcf = reclassified_data.get("PC") # Passivo Circulante
+    pncf = reclassified_data.get("PNC") # Passivo Não Circulante
     
     # Verifica se os valores essenciais existem
     if any(v is None for v in [cdg, ncg, t, ativo_total, receita_liquida, pcf, pncf]):
@@ -135,8 +158,8 @@ def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> T
     x1 = safe_divide(cdg, ativo_total)
     x2 = safe_divide(ncg, receita_liquida)
     x3 = float(tipo_estrutura) # Tipo de estrutura já deve ser um número
-    x4 = safe_divide(t, abs(ncg)) if ncg is not None else 0 # Trata o caso de NCG ser 0 aqui
-    x5 = safe_divide((pcf + pncf), ativo_total)
+    x4 = safe_divide(t, abs(ncg)) if ncg is not None and ncg != 0 else None # Trata o caso de NCG ser 0 aqui
+    x5 = safe_divide((pcf + pncf), ativo_total) if ativo_total != 0 else None
 
     # Se qualquer X for nulo, não é possível calcular o Z-Score
     if any(x is None for x in [x1, x2, x4, x5]):
@@ -175,6 +198,10 @@ def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List
             reclassified_data = reclassify_and_sum(df_year)
             base_indicators, tipo_estrutura = calculate_fleuriet_indicators(reclassified_data)
             advanced_indicators = calculate_advanced_indicators(reclassified_data, base_indicators)
+            
+            # Passa o tipo_estrutura para calculate_z_score_prado via base_indicators
+            base_indicators['TipoEstrutura'] = {'tipo': tipo_estrutura} # Adiciona ao dicionário base_indicators
+            
             z_score, z_risk = calculate_z_score_prado(reclassified_data, base_indicators)
             
             advanced_indicators['Z_Score'] = z_score
