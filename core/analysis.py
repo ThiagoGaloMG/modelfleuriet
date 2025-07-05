@@ -72,52 +72,59 @@ def calculate_fleuriet_indicators(reclassified_data: Dict) -> Tuple[Dict, str]:
 def calculate_advanced_indicators(reclassified_data: Dict, base_indicators: Dict) -> Dict:
     """Calcula indicadores avançados de forma segura."""
     
-    # Extrai valores necessários do dicionário de dados reclassificados
-    receita_liquida = reclassified_data.get("DRE_Receita")
-    custo_produtos = reclassified_data.get("DRE_Custo")
-    clientes = reclassified_data.get("AC_Clientes")
-    estoques = reclassified_data.get("AC_Estoques")
-    fornecedores = reclassified_data.get("PC_Fornecedores")
-    ncg = base_indicators.get("NCG")
-    lucro_operacional = reclassified_data.get("DRE_LucroOperacional")
-    imposto_renda = reclassified_data.get("DRE_ImpostoRenda")
-    ativo_total = reclassified_data.get("Ativo_Total")
+    # --- Extração de valores ---
+    receita_liquida = reclassified_data.get('DRE_Receita')
+    custo_produtos = reclassified_data.get('DRE_Custo')
+    lucro_op = reclassified_data.get('DRE_LucroOperacional')
+    imposto_renda = reclassified_data.get('DRE_ImpostoRenda')
     
-    # Supõe-se que Compras = Custo dos Produtos. É uma simplificação comum.
+    clientes = reclassified_data.get('AC_Clientes')
+    estoques = reclassified_data.get('AC_Estoques')
+    fornecedores = reclassified_data.get('PC_Fornecedores')
+    
+    ncg = base_indicators.get('NCG')
+    t = base_indicators.get('T')
+    anc = reclassified_data.get('ANC')
+    pl = reclassified_data.get('PL')
+    pnc = reclassified_data.get('PNC_Total')
+
+    # --- Cálculo dos Prazos Médios (LÓGICA CORRIGIDA) ---
+    # A multiplicação por 365 agora só ocorre se o ratio não for None.
+    ratio_pmr = safe_divide(clientes, receita_liquida)
+    pmr = ratio_pmr * 365 if ratio_pmr is not None else None
+    
+    ratio_pme = safe_divide(estoques, custo_produtos)
+    pme = ratio_pme * 365 if ratio_pme is not None else None
+    
     compras = custo_produtos
+    ratio_pmp = safe_divide(fornecedores, compras)
+    pmp = ratio_pmp * 365 if ratio_pmp is not None else None
     
-    # Calcula os prazos médios usando a função de divisão segura
-    pmr = safe_divide(clientes, receita_liquida) * 365 if receita_liquida is not None else None
-    pme = safe_divide(estoques, custo_produtos) * 365 if custo_produtos is not None else None
-    pmp = safe_divide(fornecedores, compras) * 365 if compras is not None else None
-    
-    # Calcula o Ciclo de Caixa (Cash to Cash)
-    ciclo_caixa = None
+    # --- Cálculo do Ciclo Financeiro (NOME CORRIGIDO) ---
+    ciclo_financeiro = None
     if all(p is not None for p in [pmr, pme, pmp]):
-        ciclo_caixa = pmr + pme - pmp
-        
-    # Calcula o Índice de Liquidez Dinâmica (ILD)
-    t = base_indicators.get("T")
-    anc = reclassified_data.get("ANC")
-    ild = safe_divide(t, (anc + ncg)) if all(v is not None for v in [t, anc, ncg]) and (anc + ncg) != 0 else None
+        ciclo_financeiro = pmr + pme - pmp
+           
+    # --- Cálculo do ILD ---
+    ild = safe_divide(t, (anc + ncg)) if all(v is not None for v in [t, anc, ncg]) else None
 
-    # Calcula o ROIC (Return on Invested Capital)
-    # NOPAT = Lucro Operacional - Imposto de Renda sobre o Lucro Operacional
-    # Capital Investido = Ativo Total - Passivo Circulante Operacional (PC_Fornecedores)
-    # Assumindo que o imposto de renda é sobre o lucro operacional para o cálculo do NOPAT
-    roic = None
-    if lucro_operacional is not None and imposto_renda is not None and ativo_total is not None and fornecedores is not None:
-        nopat = lucro_operacional - imposto_renda
-        capital_investido = ativo_total - fornecedores # Simplificação: Capital Investido = Ativo Total - Fornecedores
-        roic = safe_divide(nopat, capital_investido) * 100 if capital_investido != 0 else None
+    # --- Cálculo do ROIC ---
+    aliquota_ir = safe_divide(imposto_renda, lucro_op)
+    nopat = lucro_op * (1 - aliquota_ir) if all(v is not None for v in [lucro_op, aliquota_ir]) else None
+    
+    capital_investido = (pl + pnc) if all(v is not None for v in [pl, pnc]) else None
+    
+    roic = safe_divide(nopat, capital_investido)
+    roic_percent = roic * 100 if roic is not None else None
 
+    # O dicionário agora retorna as chaves corretas que o frontend espera
     return {
-        "PMR": pmr,
-        "PME": pme,
-        "PMP": pmp,
-        "C2C": ciclo_caixa,
-        "ILD": ild,
-        "ROIC": roic,
+        'PMR': pmr,
+        'PME': pme,
+        'PMP': pmp,
+        'Ciclo_Financeiro': ciclo_financeiro, # Nome corrigido de 'C2C'
+        'ILD': ild,
+        'ROIC': roic_percent
     }
 
 def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> Tuple[Optional[float], str]:
