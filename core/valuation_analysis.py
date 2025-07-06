@@ -1,206 +1,208 @@
+#!/usr/bin/env python3
 import pandas as pd
-import json
-from flask import Flask, render_template, request
-from flask.json.provider import DefaultJSONProvider
-from core.analysis import run_multi_year_analysis
-import os
+import yfinance as yf
+import requests
+from pathlib import Path
+import warnings
 import numpy as np
-from sqlalchemy import create_engine, text, exc
 import logging
-from dotenv import load_dotenv
+from scipy import stats
+from functools import lru_cache
+from datetime import datetime
+from typing import Dict, List, Any
 
-# Carrega variáveis de ambiente de um arquivo .env, se existir (para desenvolvimento local)
-load_dotenv()
-
-app = Flask(__name__)
-
-# --- Configuração de Logging ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
-)
+# --- Configuração Básica ---
+warnings.filterwarnings("ignore")
 logger = logging.getLogger(__name__)
+BASE_DIR = Path(__file__).resolve().parent
 
-# --- Serializador JSON Customizado ---
-class CustomJSONProvider(DefaultJSONProvider):
-    def default(self, obj):
-        if isinstance(obj, np.integer): return int(obj)
-        if isinstance(obj, np.floating): return float(obj)
-        if isinstance(obj, np.ndarray): return obj.tolist()
-        if isinstance(obj, pd.Timestamp): return obj.isoformat()
-        return super().default(obj)
+# --- Configurações Centralizadas para a Análise de Valuation ---
+VALUATION_CONFIG = {
+    "PERIODO_BETA_IBOV": "5y",
+    "CONTAS_CVM": {
+        "EBIT": "3.05", "IMPOSTO_DE_RENDA_CSLL": "3.10", "LUCRO_ANTES_IMPOSTOS": "3.09",
+        "ATIVO_NAO_CIRCULANTE": "1.02", "CAIXA_EQUIVALENTES": "1.01.01",
+        "DIVIDA_CURTO_PRAZO": "2.01.04", "DIVIDA_LONGO_PRAZO": "2.02.01",
+        "CONTAS_A_RECEBER": "1.01.03", "ESTOQUES": "1.01.04", "FORNECEDORES": "2.01.02",
+        "DESPESAS_FINANCEIRAS": "3.07" 
+    },
+    "EMPRESAS_EXCLUIDAS": ['ITUB4', 'BBDC4', 'BBAS3', 'SANB11', 'B3SA3']
+}
 
-app.json = CustomJSONProvider(app)
+# --- Funções de Lógica de Negócio e Cálculos ---
 
-# --- Configuração do Banco de Dados ---
-def create_db_engine():
-    """Cria uma engine SQLAlchemy a partir da variável de ambiente DATABASE_URL."""
-    database_url = os.environ.get('DATABASE_URL')
-    if not database_url:
-        logger.error("A variável de ambiente DATABASE_URL não foi definida.")
-        raise ValueError("A variável de ambiente DATABASE_URL não foi definida.")
-
-    conn_str = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+@lru_cache(maxsize=1)
+def obter_dados_mercado() -> Dict[str, Any]:
+    """Obtém premissas de mercado (taxa livre de risco, prêmio) e dados do IBOV para cálculo do Beta."""
+    dados = {"risk_free_rate": 0.105, "premio_risco_mercado": 0.08, "cresc_perpetuo": 0.03}
+    
     try:
-        engine = create_engine(conn_str, pool_pre_ping=True)
-        with engine.connect():
-            logger.info("Conexão com o banco de dados estabelecida com sucesso.")
-        return engine
+        selic_url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json"
+        response = requests.get(selic_url, timeout=10)
+        response.raise_for_status()
+        dados["risk_free_rate"] = float(response.json()[0]["valor"]) / 100.0
     except Exception as e:
-        logger.error(f"Falha ao criar a engine do banco de dados: {e}", exc_info=True)
+        logger.warning(f"Não foi possível obter a SELIC do BCB. Usando valor padrão. Erro: {e}")
+
+    try:
+        dados["ibov_data"] = yf.download("^BVSP", period=VALUATION_CONFIG["PERIODO_BETA_IBOV"], progress=False, timeout=15)
+        if dados["ibov_data"].empty:
+            raise ValueError("Download do IBOV retornou um DataFrame vazio.")
+    except Exception as e:
+        logger.error(f"Falha ao baixar dados do IBOV. O cálculo do Beta usará o valor padrão 1.0. Erro: {e}")
+        dados["ibov_data"] = pd.DataFrame() 
+    return dados
+
+def obter_valor_recente(df_empresa: pd.DataFrame, codigo_conta: str) -> float:
+    """Obtém o valor mais recente de uma conta específica de um DataFrame de empresa."""
+    historico = obter_historico_metrica(df_empresa, codigo_conta)
+    return historico.iloc[-1] if not historico.empty else 0.0
+
+def obter_historico_metrica(df_empresa: pd.DataFrame, codigo_conta: str) -> pd.Series:
+    """Extrai uma série temporal de uma métrica específica."""
+    metric_df = df_empresa[(df_empresa["CD_CONTA"] == codigo_conta) & (df_empresa["ORDEM_EXERC"] == "ÚLTIMO")]
+    if metric_df.empty:
+        return pd.Series(dtype=float)
+    metric_df = metric_df.copy()
+    metric_df["DT_REFER"] = pd.to_datetime(metric_df["DT_REFER"])
+    return metric_df.set_index("DT_REFER")["VL_CONTA"].sort_index()
+
+def calcular_beta(ticker: str, ibov_data: pd.DataFrame) -> float:
+    """Calcula o beta ajustado de uma ação em relação ao IBOV."""
+    if ibov_data.empty: return 1.0
+    try:
+        dados_acao = yf.download(ticker, period=VALUATION_CONFIG["PERIODO_BETA_IBOV"], progress=False, timeout=15)
+        if dados_acao.empty or len(dados_acao) < 60: return 1.0
+        
+        dados_combinados = pd.concat([dados_acao["Adj Close"], ibov_data["Adj Close"]], axis=1).dropna()
+        retornos = dados_combinados.pct_change().dropna()
+        if len(retornos) < 50: return 1.0
+        
+        retornos.columns = ['Acao', 'Ibov']
+        slope, _, _, _, _ = stats.linregress(retornos['Ibov'], retornos['Acao'])
+        beta_ajustado = 0.67 * slope + 0.33 * 1.0
+        return beta_ajustado if not np.isnan(beta_ajustado) else 1.0
+    except Exception:
+        return 1.0
+
+def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market_data: Dict[str, Any]) -> Dict[str, Any] | None:
+    """
+    Executa todos os cálculos de valuation para uma única empresa.
+    Recebe o DataFrame já filtrado para a empresa.
+    """
+    try:
+        if df_empresa.empty: return None
+
+        info = yf.Ticker(ticker_sa).info
+        market_cap = info.get("marketCap")
+        preco_atual = info.get("currentPrice", info.get("previousClose"))
+        n_acoes = info.get("sharesOutstanding")
+
+        if not all([market_cap, preco_atual, n_acoes, n_acoes > 0, market_cap > 0]):
+            return None
+
+        C = VALUATION_CONFIG["CONTAS_CVM"]
+        hist_ebit = obter_historico_metrica(df_empresa, C["EBIT"])
+        if hist_ebit.empty or hist_ebit.iloc[-1] == 0: return None
+
+        imposto_total = obter_historico_metrica(df_empresa, C["IMPOSTO_DE_RENDA_CSLL"]).sum()
+        lucro_antes_ir = obter_historico_metrica(df_empresa, C["LUCRO_ANTES_IMPOSTOS"]).sum()
+        aliquota_efetiva = abs(imposto_total / lucro_antes_ir) if lucro_antes_ir != 0 else 0.34
+        aliquota_efetiva = max(0, min(aliquota_efetiva, 0.45))
+
+        nopat_recente = hist_ebit.iloc[-1] * (1 - aliquota_efetiva)
+
+        ncg = (obter_valor_recente(df_empresa, C["CONTAS_A_RECEBER"]) + 
+               obter_valor_recente(df_empresa, C["ESTOQUES"]) - 
+               obter_valor_recente(df_empresa, C["FORNECEDORES"]))
+        
+        ativo_nao_circulante = obter_valor_recente(df_empresa, C["ATIVO_NAO_CIRCULANTE"])
+        capital_empregado = ncg + ativo_nao_circulante
+
+        if capital_empregado <= 0: return None
+
+        roic = nopat_recente / capital_empregado
+        beta = calcular_beta(ticker_sa, market_data["ibov_data"])
+        ke = market_data["risk_free_rate"] + beta * market_data["premio_risco_mercado"]
+
+        divida_total = (obter_valor_recente(df_empresa, C["DIVIDA_CURTO_PRAZO"]) + 
+                        obter_valor_recente(df_empresa, C["DIVIDA_LONGO_PRAZO"]))
+        despesa_financeira = abs(obter_valor_recente(df_empresa, C["DESPESAS_FINANCEIRAS"]))
+        
+        kd = min(despesa_financeira / divida_total, 0.35) if divida_total > 0 and despesa_financeira > 0 else ke * 0.7
+
+        valor_total = market_cap + divida_total
+        if valor_total <= 0: return None
+            
+        w_e = market_cap / valor_total
+        w_d = divida_total / valor_total
+        wacc = (w_e * ke) + (w_d * kd * (1 - aliquota_efetiva))
+
+        g = market_data["cresc_perpetuo"]
+        if wacc <= g: return None
+
+        eva = (roic - wacc) * capital_empregado
+        valor_firma = capital_empregado + (eva * (1 + g)) / (wacc - g)
+        
+        divida_liquida = divida_total - obter_valor_recente(df_empresa, C["CAIXA_EQUIVALENTES"])
+        equity_value = valor_firma - divida_liquida
+        preco_justo = equity_value / n_acoes
+        
+        upside = (preco_justo / preco_atual) - 1 if preco_atual > 0 else 0
+
+        return {
+            'Nome': info.get('shortName', ticker_sa.replace('.SA', ''))[:30], 
+            'Ticker': ticker_sa.replace('.SA', ''),
+            'Upside': upside, 'ROIC': roic, 'WACC': wacc, 'Spread': roic - wacc,
+            'Preco_Atual': preco_atual, 'Preco_Justo': preco_justo,
+            'Market_Cap': market_cap, 'EVA': eva,
+            'Capital_Empregado': capital_empregado, 'NOPAT': nopat_recente
+        }
+    except Exception as e:
+        logger.error(f"Erro ao processar valuation para {ticker_sa}: {e}", exc_info=True)
         return None
 
-# --- Carregamento de Dados Iniciais (LÓGICA CORRIGIDA) ---
-
-def load_ticker_mapping(file_path='data/mapeamento_tickers.csv'):
-    """Carrega o mapeamento de tickers de um arquivo CSV."""
-    logger.info(f"A carregar mapeamento de tickers de {file_path}...")
-    try:
-        if not os.path.exists(file_path):
-            logger.error(f"Arquivo de mapeamento de tickers não encontrado em: {file_path}")
-            return pd.DataFrame()
-
-        df_tickers = pd.read_csv(file_path, sep=',', encoding='utf-8')
-        df_tickers.columns = [col.strip().upper() for col in df_tickers.columns]
+def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    Função principal que orquestra a análise de valuation para todas as empresas.
+    """
+    logger.info(">>>>>> INICIANDO ANÁLISE DE VALUATION PARA TODAS AS EMPRESAS <<<<<<")
+    
+    market_data = obter_dados_mercado()
+    
+    resultados_brutos = []
+    
+    # Itera sobre o mapa de tickers, que já contém CD_CVM e Ticker
+    for _, row in ticker_map.drop_duplicates(subset=['TICKER']).iterrows():
+        ticker = row['TICKER']
+        codigo_cvm = row['CD_CVM']
         
-        required_cols = {'CD_CVM', 'TICKER'}
-        if not required_cols.issubset(df_tickers.columns):
-            logger.error(f"Arquivo de mapeamento não contém as colunas obrigatórias: {required_cols}")
-            return pd.DataFrame()
+        if ticker in VALUATION_CONFIG["EMPRESAS_EXCLUIDAS"]:
+            continue
         
-        # Garante que CD_CVM seja numérico para o merge
-        df_tickers['CD_CVM'] = pd.to_numeric(df_tickers['CD_CVM'], errors='coerce')
-        df_tickers.dropna(subset=['CD_CVM'], inplace=True)
-        df_tickers['CD_CVM'] = df_tickers['CD_CVM'].astype(int)
+        # Filtra o DataFrame completo para a empresa atual
+        df_empresa_atual = df_full_data[df_full_data["CD_CVM"] == codigo_cvm].copy()
         
-        df_tickers = df_tickers[['CD_CVM', 'TICKER']].drop_duplicates(subset=['CD_CVM'])
-        logger.info(f"{len(df_tickers)} mapeamentos de tickers carregados.")
-        return df_tickers
-    except Exception as e:
-        logger.error(f"Erro ao carregar o arquivo de mapeamento de tickers: {e}", exc_info=True)
-        return pd.DataFrame()
+        if df_empresa_atual.empty:
+            continue
 
-def get_companies_list(engine, ticker_mapping_df):
-    """Busca a lista de empresas do banco e junta com os tickers."""
-    if engine is None:
-        logger.error("Engine do banco de dados não está disponível.")
-        return []
-        
-    logger.info("A buscar lista de empresas do banco de dados...")
-    try:
-        with engine.connect() as connection:
-            query = text('SELECT DISTINCT "DENOM_CIA", "CD_CVM" FROM financial_data ORDER BY "DENOM_CIA";')
-            df_companies_db = pd.read_sql(query, connection)
-            df_companies_db['CD_CVM'] = pd.to_numeric(df_companies_db['CD_CVM'], errors='coerce').astype('Int64')
-            logger.info(f"{len(df_companies_db)} empresas únicas encontradas no banco.")
+        resultado = processar_valuation_empresa(f"{ticker.upper()}.SA", df_empresa_atual, market_data)
+        if resultado:
+            resultados_brutos.append(resultado)
+    
+    # Aplica o filtro de sanidade
+    resultados_filtrados = []
+    for r in resultados_brutos:
+        if r is None: continue
+        wacc_ok = 0.01 < r.get('WACC', 1) < 0.40
+        upside_ok = -0.99 < r.get('Upside', 0) < 10.0
+        if wacc_ok and upside_ok:
+            resultados_filtrados.append(r)
+        else:
+            logger.warning(f"Filtrando empresa {r['Ticker']} por resultados extremos: WACC={r.get('WACC', 'N/A'):.2%}, Upside={r.get('Upside', 'N/A'):.2%}")
 
-            if df_companies_db.empty:
-                return []
-
-            # Renomeia a coluna para o nome que o template espera
-            df_companies_db.rename(columns={'DENOM_CIA': 'NOME_EMPRESA'}, inplace=True)
-
-            # Junta (merge) com os tickers se o mapeamento foi carregado
-            if not ticker_mapping_df.empty:
-                final_df = pd.merge(df_companies_db, ticker_mapping_df, on='CD_CVM', how='left')
-                # Se uma empresa não tiver ticker, preenche com um valor padrão
-                final_df['TICKER'].fillna('S/TICKER', inplace=True)
-            else:
-                final_df = df_companies_db
-                final_df['TICKER'] = 'S/TICKER'
-            
-            return final_df.to_dict(orient='records')
-
-    except Exception as e:
-        logger.error(f"Um erro inesperado ocorreu ao buscar e juntar a lista de empresas: {e}", exc_info=True)
-        return []
-
-# Inicializa a engine e carrega os dados na inicialização da aplicação
-db_engine = create_db_engine()
-df_tickers = load_ticker_mapping()
-companies_list = get_companies_list(db_engine, df_tickers)
-if not companies_list:
-    logger.warning("A lista de empresas está vazia após a inicialização.")
-
-# --- Rotas da Aplicação ---
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    try:
-        if not companies_list:
-            error_msg = "Não foi possível carregar a lista de empresas. Verifique os logs para mais detalhes."
-            return render_template('index.html', companies=[], error=error_msg)
-
-        if request.method == 'GET':
-            return render_template('index.html', companies=companies_list)
-
-        cvm_code_str = request.form.get('cvm_code')
-        start_year_str = request.form.get('start_year')
-        end_year_str = request.form.get('end_year')
-
-        if not all([cvm_code_str, start_year_str, end_year_str]):
-            return render_template('index.html', companies=companies_list, error="Todos os campos são obrigatórios.")
-
-        try:
-            cvm_code = int(cvm_code_str)
-            start_year = int(start_year_str)
-            end_year = int(end_year_str)
-            years_to_analyze = list(range(start_year, end_year + 1))
-        except (ValueError, TypeError):
-            return render_template('index.html', companies=companies_list, error="Valores inválidos para código CVM ou anos.")
-
-        logger.info(f"A iniciar busca de dados para CVM {cvm_code}")
-        
-        df_company = pd.DataFrame()
-        try:
-            with db_engine.connect() as connection:
-                query = text('SELECT * FROM financial_data WHERE "CD_CVM" = :cvm_code')
-                df_company = pd.read_sql(query, connection, params={'cvm_code': cvm_code})
-            
-            if df_company.empty:
-                error = f"Nenhum dado encontrado no banco para a empresa com CVM {cvm_code}."
-                return render_template('index.html', companies=companies_list, error=error)
-            
-            logger.info(f"Dados carregados do banco: {len(df_company)} registos para CVM {cvm_code}")
-
-        except exc.SQLAlchemyError as e:
-            error = "Erro ao aceder ao banco de dados durante a busca de dados da empresa."
-            return render_template('index.html', companies=companies_list, error=error)
-
-        logger.info(f"A iniciar análise para CVM {cvm_code} para os anos {years_to_analyze}")
-        analysis_results, error = run_multi_year_analysis(df_company, cvm_code, years_to_analyze)
-        
-        if error:
-            return render_template('index.html', companies=companies_list, error=error)
-        
-        return render_template(
-            'index.html', 
-            companies=companies_list, 
-            results=analysis_results, 
-            selected_company=cvm_code_str,
-            chart_data_json=json.dumps(analysis_results.get('chart_data', {}))
-        )
-
-    except Exception as e:
-        error = "Ocorreu um erro crítico na aplicação."
-        logger.error(f"{error} Detalhes: {e}", exc_info=True)
-        return render_template('500.html', error=error), 500
-
-# --- Handlers de Erro e Headers ---
-@app.errorhandler(404)
-def page_not_found(e):
-    return render_template('404.html'), 404
-
-@app.errorhandler(500)
-def internal_server_error(e):
-    logger.error(f"Erro interno no servidor: {e}", exc_info=True)
-    return render_template('500.html'), 500
-
-@app.after_request
-def add_header(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    return response
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    total_calculado = len(resultados_brutos)
+    total_filtrado = len(resultados_filtrados)
+    logger.info(f">>>>>> ANÁLISE DE VALUATION CONCLUÍDA: {total_filtrado} de {total_calculado} empresas passaram no filtro. <<<<<<")
+    
+    return resultados_filtrados
