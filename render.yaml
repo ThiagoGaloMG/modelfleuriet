@@ -1,16 +1,10 @@
-# Blueprint final: define apenas o serviço web
 services:
+  # 1. Seu serviço web existente (para o usuário final)
   - type: web
     name: modelfleuriet
     region: oregon
     env: python
     plan: free
-    buildFilter:
-      paths:
-      - "flask_app.py"
-      - "core/**"
-      - "templates/**"
-      - "requirements.txt"
     buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn flask_app:app"
     envVars:
@@ -18,7 +12,19 @@ services:
         fromDatabase:
           name: modelfleuriet-db
           property: connectionString
-      - key: SECRET_KEY
-        generateValue: true
       - key: PYTHON_VERSION
         value: "3.10.13"
+
+  # 2. NOVO: Serviço do trabalhador de fundo (para cálculos pesados)
+  - type: worker
+    name: valuation-worker
+    region: oregon
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python run_valuation_worker.py"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: modelfleuriet-db
+          property: connectionString
