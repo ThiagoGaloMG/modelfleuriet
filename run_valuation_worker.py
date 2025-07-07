@@ -5,6 +5,7 @@ import os
 import logging
 from dotenv import load_dotenv
 from core.valuation_analysis import run_full_valuation_analysis
+from datetime import datetime
 
 # --- Configuração ---
 load_dotenv()
@@ -19,6 +20,7 @@ if not DB_URL:
 CONN_STR = DB_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 DB_ENGINE = create_engine(CONN_STR)
 VALUATION_TABLE_NAME = 'valuation_results'
+TICKER_MAPPING_PATH = 'data/mapeamento_tickers.csv'  # Caminho do arquivo CSV de mapeamento
 
 def create_valuation_table():
     """Cria a tabela para armazenar os resultados do valuation, se não existir."""
@@ -46,25 +48,41 @@ def create_valuation_table():
         logger.error(f"Falha ao criar tabela de valuation: {e}")
         raise
 
+def load_ticker_mapping(file_path=TICKER_MAPPING_PATH):
+    """Carrega o mapeamento de tickers de um arquivo CSV."""
+    try:
+        df_tickers = pd.read_csv(file_path, sep=',')
+        df_tickers.columns = [col.strip().upper() for col in df_tickers.columns]
+        df_tickers['CD_CVM'] = pd.to_numeric(df_tickers['CD_CVM'], errors='coerce').dropna().astype(int)
+        df_tickers = df_tickers[['CD_CVM', 'TICKER']].drop_duplicates(subset=['CD_CVM'])
+        logger.info(f"{len(df_tickers)} mapeamentos carregados de {file_path}.")
+        return df_tickers
+    except Exception as e:
+        logger.error(f"Erro ao carregar mapeamento de tickers: {e}")
+        raise
+
 def main():
     """Função principal do worker."""
-    logger.info("--- INICIANDO WORKER DE ANÁLISE DE VALUATION ---")
+    exec_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger.info(f"--- INICIANDO WORKER DE ANÁLISE DE VALUATION às {exec_time} ---")
     
     try:
         # 1. Garante que a tabela de resultados exista
         create_valuation_table()
 
-        # 2. Carrega todos os dados financeiros do banco
+        # 2. Carrega o mapeamento de tickers do CSV
+        df_tickers = load_ticker_mapping()
+
+        # 3. Carrega todos os dados financeiros do banco
         logger.info("Carregando todos os dados financeiros do banco...")
         with DB_ENGINE.connect() as connection:
             df_full_data = pd.read_sql('SELECT * FROM financial_data', connection)
-            df_tickers = pd.read_sql('SELECT DISTINCT "CD_CVM", "TICKER" FROM data.mapeamento_tickers', connection) # Assumindo que o mapeamento está em uma tabela
         
         if df_full_data.empty or df_tickers.empty:
             logger.error("Dados financeiros ou mapeamento de tickers não encontrados. Abortando.")
             return
 
-        # 3. Executa a análise de valuation completa
+        # 4. Executa a análise de valuation completa
         logger.info("Executando a análise de valuation para todas as empresas...")
         valuation_results = run_full_valuation_analysis(df_full_data, df_tickers)
         
@@ -72,9 +90,9 @@ def main():
             logger.warning("Nenhum resultado de valuation foi gerado.")
             return
 
-        # 4. Salva os resultados no banco de dados
+        # 5. Salva os resultados no banco de dados
         df_results = pd.DataFrame(valuation_results)
-        logger.info(f"Salvando {len(df_results)} resultados de valuation na tabela '{VALUATION_TABLE_NAME}'...")
+        logger.info(f"Salvando {len(df_results Bengals) resultados de valuation na tabela '{VALUATION_TABLE_NAME}'...")
         
         # Usando 'replace' para sempre ter os dados mais atualizados
         df_results.to_sql(
