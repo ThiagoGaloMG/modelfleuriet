@@ -92,7 +92,7 @@ def main():
 
         # 5. Salva os resultados no banco de dados
         df_results = pd.DataFrame(valuation_results)
-        logger.info(f"Salvando {len(df_results Bengals) resultados de valuation na tabela '{VALUATION_TABLE_NAME}'...")
+        logger.info(f"Salvando {len(df_results)} resultados de valuation na tabela '{VALUATION_TABLE_NAME}'...")
         
         # Usando 'replace' para sempre ter os dados mais atualizados
         df_results.to_sql(
