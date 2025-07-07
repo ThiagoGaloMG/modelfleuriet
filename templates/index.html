@@ -3,1021 +3,282 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Analisador Fleuriet - B3</title>
+    <title>Análise 360° - Fleuriet & Valuation</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --primary-600: #4f46e5;
-            --primary-700: #4338ca;
-            --success-500: #10b981;
-            --warning-500: #f59e0b;
-            --danger-500: #ef4444;
-            --gray-50: #f9fafb;
-            --gray-100: #f3f4f6;
-            --gray-800: #1f2937;
-            --gray-900: #111827;
-        }
-
-        body { 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            font-family: 'Inter', sans-serif;
-            padding: 0;
-            margin: 0;
-        }
-
-        .glass-card {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 16px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-        }
-
-        .hero-section {
-            background: linear-gradient(135deg, rgba(79, 70, 229, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-            border-radius: 20px;
-            padding: 3rem 2rem;
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-
-        .form-card {
-            background: rgba(255, 255, 255, 0.98);
-            backdrop-filter: blur(15px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 20px;
-            padding: 2rem;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-        }
-
-        .metric-card {
-            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-            border: 1px solid rgba(226, 232, 240, 0.8);
-            border-radius: 12px;
-            padding: 1.5rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s ease;
-        }
-
-        .metric-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
-        }
-
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            padding: 0.5rem 1rem;
-            border-radius: 9999px;
-            font-size: 0.875rem;
-            font-weight: 500;
-            text-align: center;
-        }
-
-        .status-optimal { background: #d1fae5; color: #065f46; }
-        .status-warning { background: #fef3c7; color: #92400e; }
-        .status-danger { background: #fee2e2; color: #991b1b; }
-
-        .chart-container {
-            position: relative;
-            height: 400px;
-            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-            border-radius: 16px;
-            padding: 1.5rem;
-            margin: 1.5rem 0;
-            box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1);
-        }
-
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.3s ease;
-        }
-
-        .loading-overlay.active {
-            opacity: 1;
-            visibility: visible;
-        }
-
-        .loading-spinner {
-            width: 60px;
-            height: 60px;
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-top: 4px solid #4f46e5;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .fade-in {
-            animation: fadeIn 0.6s ease-in-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .tooltip {
-            position: relative;
-            display: inline-block;
-            cursor: help;
-        }
-
-        .tooltip .tooltiptext {
-            visibility: hidden;
-            width: 280px;
-            background-color: #1f2937;
-            color: white;
-            text-align: left;
-            border-radius: 8px;
-            padding: 12px;
-            position: absolute;
-            z-index: 1000;
-            bottom: 125%;
-            left: 50%;
-            margin-left: -140px;
-            opacity: 0;
-            transition: opacity 0.3s;
-            font-size: 0.85rem;
-            line-height: 1.4;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
-        }
-
-        .tooltip:hover .tooltiptext {
-            visibility: visible;
-            opacity: 1;
-        }
-
-        .risk-indicator {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-
-        .risk-low { background-color: #10b981; }
-        .risk-medium { background-color: #f59e0b; }
-        .risk-high { background-color: #ef4444; }
-
-        /* Estilos para tabelas responsivas */
-        .table-container {
-            overflow-x: auto;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
-
-        .enhanced-table {
-            min-width: 100%;
-            background: white;
-            border-radius: 12px;
-            overflow: hidden;
-        }
-
-        .enhanced-table thead {
-            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-        }
-
-        .enhanced-table thead th {
-            color: white;
-            font-weight: 600;
-            padding: 1rem;
-            text-align: left;
-            font-size: 0.875rem;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-        }
-
-        .enhanced-table tbody tr {
-            transition: all 0.2s ease;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        .enhanced-table tbody tr:hover {
-            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-            transform: scale(1.01);
-        }
-
-        .enhanced-table tbody td {
-            padding: 1rem;
-            font-size: 0.875rem;
-            color: #374151;
-        }
-
-        .enhanced-table tbody td:first-child {
-            font-weight: 600;
-            color: #1f2937;
-        }
-
-        /* Indicadores de estrutura financeira */
-        .structure-optimal { 
-            background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); 
-            color: #065f46; 
-            border: 1px solid #10b981;
-        }
-        .structure-good { 
-            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); 
-            color: #1e40af; 
-            border: 1px solid #3b82f6;
-        }
-        .structure-warning { 
-            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); 
-            color: #92400e; 
-            border: 1px solid #f59e0b;
-        }
-        .structure-danger { 
-            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); 
-            color: #991b1b; 
-            border: 1px solid #ef4444;
-        }
-
-        /* Seção de explicações */
-        .explanation-card {
-            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-            border: 2px solid #0ea5e9;
-            border-radius: 12px;
-            padding: 1.5rem;
-            margin: 1rem 0;
-        }
-
-        .explanation-title {
-            color: #0c4a6e;
-            font-weight: 600;
-            font-size: 1.1rem;
-            margin-bottom: 0.5rem;
-            display: flex;
-            align-items: center;
-        }
-
-        .explanation-text {
-            color: #0369a1;
-            font-size: 0.95rem;
-            line-height: 1.5;
-        }
-
-        .icon-info {
-            width: 20px;
-            height: 20px;
-            margin-right: 8px;
-            color: #0ea5e9;
-        }
-
-        @media (max-width: 768px) {
-            .hero-section {
-                padding: 2rem 1rem;
-            }
-            
-            .form-card {
-                padding: 1.5rem;
-            }
-            
-            .chart-container {
-                height: 300px;
-                padding: 1rem;
-            }
-
-            .enhanced-table thead th,
-            .enhanced-table tbody td {
-                padding: 0.75rem 0.5rem;
-                font-size: 0.8rem;
-            }
-
-            .tooltip .tooltiptext {
-                width: 250px;
-                margin-left: -125px;
-                font-size: 0.8rem;
-            }
-        }
-
-        @media (max-width: 640px) {
-            .enhanced-table {
-                min-width: 600px;
-            }
-        }
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
+        .glass-card { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px); border: 1px solid rgba(226, 232, 240, 0.7); border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); }
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.8); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; opacity: 0; visibility: hidden; transition: all 0.3s ease; }
+        .loading-overlay.active { opacity: 1; visibility: visible; }
+        .loading-spinner { width: 60px; height: 60px; border: 4px solid rgba(255, 255, 255, 0.3); border-top: 4px solid #4f46e5; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .tab-item { padding: 0.75rem 1rem; border-radius: 0.75rem; font-weight: 600; color: #4b5563; transition: all 0.3s ease; display: inline-flex; align-items: center; border: 2px solid transparent; cursor: pointer; }
+        .tab-item:hover { background-color: #f3f4f6; color: #1f2937; }
+        .tab-item.active { background-color: #ffffff; color: #4f46e5; border-color: #4f46e5; box-shadow: 0 4px 14px -2px rgba(79, 70, 229, 0.2); }
+        .tab-pane { display: none; }
+        .tab-pane.active { display: block; animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .data-card { background-color: white; border-radius: 0.75rem; padding: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,.05); }
+        .enhanced-table { width: 100%; background: white; border-radius: 12px; overflow: hidden; }
+        .enhanced-table thead { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; }
+        .enhanced-table th, .enhanced-table td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        .enhanced-table tbody tr:last-child td { border-bottom: 0; }
+        .sortable:hover { background-color: rgba(255,255,255,0.1); cursor: pointer; }
     </style>
 </head>
-<body class="antialiased">
+<body class="antialiased text-gray-800">
     <div class="loading-overlay" id="loadingOverlay">
-        <div class="text-center">
-            <div class="loading-spinner"></div>
-            <p class="text-white mt-4 text-lg">Processando análise...</p>
-        </div>
+        <div class="loading-spinner"></div>
+        <p class="text-white mt-4 text-lg" id="loadingText">Processando...</p>
     </div>
 
     <div class="min-h-screen py-8 px-4">
         <div class="container mx-auto max-w-7xl">
-            <!-- Hero Section -->
-            <div class="hero-section glass-card">
-                <div class="flex items-center justify-center mb-4">
-                    <div class="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mr-4">
-                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                        </svg>
-                    </div>
-                    <h1 class="text-4xl md:text-5xl font-bold text-gray-800">Analisador Fleuriet</h1>
-                </div>
-                <p class="text-lg md:text-xl text-white max-w-3xl mx-auto">
-                    Análise financeira avançada para empresas listadas na B3. 
-                    Detecte o <strong>Efeito Tesoura</strong> e avalie a saúde financeira com precisão.
-                </p>
-            </div>
+            <header class="text-center mb-8">
+                <h1 class="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">Análise 360° de Empresas</h1>
+                <p class="text-lg md:text-xl text-gray-600 mt-3">Combine a saúde financeira do Modelo Fleuriet com o potencial de Valuation.</p>
+            </header>
 
-            <!-- Seção de Explicações Básicas -->
-            <div class="explanation-card mb-8">
-                <div class="explanation-title">
-                    <svg class="icon-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>
-                    O que é o Modelo Fleuriet?
-                </div>
-                <div class="explanation-text">
-                    <strong>Imagine uma empresa como uma casa:</strong> O Modelo Fleuriet é como um termômetro que mede se a casa tem dinheiro suficiente para pagar as contas do dia a dia. Ele olha para três coisas importantes: quanto dinheiro a empresa precisa para funcionar (NCG), quanto dinheiro ela tem guardado para emergências (CDG), e quanto sobra no final (Tesouraria). Quando tudo está equilibrado, a empresa está saudável!
-                </div>
-            </div>
-
-            <!-- Form Section -->
             <div class="form-card mb-8">
                 <form id="analysisForm" action="/" method="POST" class="space-y-6">
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
                         <div class="md:col-span-2">
-                            <label for="cvm_code" class="block text-sm font-semibold text-gray-700 mb-2">
-                                Selecione a Empresa
-                                <span class="tooltip">
-                                    <span class="text-blue-500 ml-1">ℹ️</span>
-                                    <span class="tooltiptext">Escolha uma empresa listada na B3 (Bolsa de Valores do Brasil) para analisar sua saúde financeira</span>
-                                </span>
-                            </label>
-                            <select name="cvm_code" id="cvm_code" required
-                                    class="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition-colors text-gray-700">
-                                <option value="" disabled selected>Escolha um ticker...</option>
+                            <label for="cvm_code" class="block text-sm font-semibold text-gray-700 mb-2">Selecione a Empresa</label>
+                            <select name="cvm_code" id="cvm_code" required class="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors">
+                                <option value="" disabled {% if not selected_company %}selected{% endif %}>Escolha uma empresa...</option>
                                 {% for company in companies %}
-                                    <option value="{{ company.CD_CVM }}">{{ company.TICKER }} - {{ company.NOME_EMPRESA }}</option>
+                                    <option value="{{ company.CD_CVM }}" {% if selected_company == company.CD_CVM|string %}selected{% endif %}>
+                                        {{ company.TICKER }} - {{ company.NOME_EMPRESA }}
+                                    </option>
                                 {% endfor %}
                             </select>
                         </div>
-
                         <div>
-                            <label for="start_year" class="block text-sm font-semibold text-gray-700 mb-2">
-                                Ano Início
-                                <span class="tooltip">
-                                    <span class="text-blue-500 ml-1">ℹ️</span>
-                                    <span class="tooltiptext">Escolha o primeiro ano que você quer analisar</span>
-                                </span>
-                            </label>
-                            <select name="start_year" id="start_year" required
-                                    class="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition-colors text-gray-700">
-                                <option value="2018" selected>2018</option>
-                                <option value="2019">2019</option>
-                                <option value="2020">2020</option>
-                                <option value="2021">2021</option>
-                                <option value="2022">2022</option>
-                                <option value="2023">2023</option>
-                                <option value="2024">2024</option>
+                            <label for="start_year" class="block text-sm font-semibold text-gray-700 mb-2">Ano Início</label>
+                            <select name="start_year" id="start_year" required class="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none">
+                                {% for year in range(2020, 2025) %}<option value="{{ year }}" {% if start_year == year or (not start_year and year == 2020) %}selected{% endif %}>{{ year }}</option>{% endfor %}
                             </select>
                         </div>
-
                         <div>
-                            <label for="end_year" class="block text-sm font-semibold text-gray-700 mb-2">
-                                Ano Fim
-                                <span class="tooltip">
-                                    <span class="text-blue-500 ml-1">ℹ️</span>
-                                    <span class="tooltiptext">Escolha o último ano que você quer analisar</span>
-                                </span>
-                            </label>
-                            <select name="end_year" id="end_year" required
-                                    class="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition-colors text-gray-700">
-                                <option value="2018">2018</option>
-                                <option value="2019">2019</option>
-                                <option value="2020">2020</option>
-                                <option value="2021">2021</option>
-                                <option value="2022">2022</option>
-                                <option value="2023">2023</option>
-                                <option value="2024" selected>2024</option>
+                            <label for="end_year" class="block text-sm font-semibold text-gray-700 mb-2">Ano Fim</label>
+                            <select name="end_year" id="end_year" required class="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none">
+                                {% for year in range(2020, 2025) %}<option value="{{ year }}" {% if end_year == year or (not end_year and year == 2024) %}selected{% endif %}>{{ year }}</option>{% endfor %}
                             </select>
                         </div>
                     </div>
-
                     <div class="flex justify-center">
-                        <button type="submit" id="submitBtn"
-                                class="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                            </svg>
-                            <span id="btnText">Analisar Período</span>
+                        <button type="submit" id="submitBtn" class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                            <span id="btnText">Analisar</span>
                         </button>
                     </div>
                 </form>
             </div>
 
-            <!-- Error Message -->
-            {% if error %}
-                <div class="glass-card p-6 mb-8 border-l-4 border-red-500 bg-red-50">
-                    <div class="flex">
-                        <div class="flex-shrink-0">
-                            <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-                            </svg>
-                        </div>
-                        <div class="ml-3">
-                            <h3 class="text-sm font-medium text-red-800">Erro na Análise</h3>
-                            <p class="text-sm text-red-700 mt-1">{{ error }}</p>
-                        </div>
-                    </div>
-                </div>
-            {% endif %}
-
-            <!-- Results Section -->
-            {% if results %}
-                <div class="fade-in space-y-8">
-                    <!-- Company Header -->
+            {% if fleuriet_results %}
+                <div id="results-container" class="fade-in space-y-8">
                     <div class="text-center glass-card p-6">
-                        <h2 class="text-3xl font-bold text-gray-800 mb-2">{{ results.company_name }}</h2>
-                        <p class="text-lg text-gray-600">CVM: {{ results.cvm_code }}</p>
+                        <h2 class="text-3xl font-bold text-gray-800 mb-2">{{ fleuriet_results.company_name }}</h2>
+                        <p class="text-lg text-gray-600">CVM: {{ fleuriet_results.cvm_code }}</p>
                     </div>
 
-                    <!-- Key Metrics Overview -->
-                    {% if results.yearly_results %}
-                        {% set latest = results.yearly_results[-1] %}
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                            <div class="metric-card text-center">
-                                <div class="text-2xl font-bold text-blue-600 mb-2">
-                                    {% if latest.base_indicators.NCG is number %}
-                                        R$ {{ "{:,.0f}".format(latest.base_indicators.NCG / 1000) }}k
-                                    {% else %}
-                                        N/A
-                                    {% endif %}
-                                </div>
-                                <div class="text-sm text-gray-600 mb-1 tooltip">
-                                    NCG - Necessidade de Capital de Giro
-                                    <span class="tooltiptext">
-                                        <strong>NCG é como o dinheiro que a empresa precisa para funcionar todo dia.</strong><br><br>
-                                        Imagine uma loja: ela precisa comprar produtos para vender, pagar funcionários e esperar os clientes pagarem. A NCG é exatamente esse dinheiro necessário para manter a loja funcionando enquanto espera receber das vendas.
-                                    </span>
-                                </div>
-                                <div class="text-xs text-gray-500">{{ latest.year }}</div>
-                            </div>
-
-                            <div class="metric-card text-center">
-                                <div class="text-2xl font-bold text-green-600 mb-2">
-                                    {% if latest.base_indicators.CDG is number %}
-                                        R$ {{ "{:,.0f}".format(latest.base_indicators.CDG / 1000) }}k
-                                    {% else %}
-                                        N/A
-                                    {% endif %}
-                                </div>
-                                <div class="text-sm text-gray-600 mb-1 tooltip">
-                                    CDG - Capital de Giro
-                                    <span class="tooltiptext">
-                                        <strong>CDG é como uma reserva de dinheiro que a empresa tem para emergências.</strong><br><br>
-                                        É como ter uma poupança: quando a empresa precisa de dinheiro extra para pagar contas ou investir, ela usa essa reserva. Quanto maior o CDG, mais segura a empresa está.
-                                    </span>
-                                </div>
-                                <div class="text-xs text-gray-500">{{ latest.year }}</div>
-                            </div>
-
-                            <div class="metric-card text-center">
-                                <div class="text-2xl font-bold text-purple-600 mb-2">
-                                    {% if latest.advanced_indicators.Z_Score is number %}
-                                        {{ "%.2f"|format(latest.advanced_indicators.Z_Score) }}
-                                    {% else %}
-                                        N/A
-                                    {% endif %}
-                                </div>
-                                <div class="text-sm text-gray-600 mb-1 tooltip">
-                                    Z-Score de Prado
-                                    <span class="tooltiptext">
-                                        <strong>Z-Score é como uma nota da escola para a empresa.</strong><br><br>
-                                        Quanto maior a nota, melhor a empresa está financeiramente. É como se fosse um termômetro que mostra se a empresa está saudável (nota alta) ou se pode ter problemas (nota baixa).
-                                    </span>
-                                </div>
-                                <div class="text-xs">
-                                    {% if latest.advanced_indicators.Z_Risk != 'N/A' %}
-                                        {% set risk_class = 'risk-low' if 'Baixo' in latest.advanced_indicators.Z_Risk else ('risk-medium' if 'Médio' in latest.advanced_indicators.Z_Risk else 'risk-high') %}
-                                        <span class="risk-indicator {{ risk_class }}"></span>{{ latest.advanced_indicators.Z_Risk }}
-                                    {% else %}
-                                        N/A
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </div>
-                    {% endif %}
-
-                    <!-- Scissors Effect Chart -->
-                    <div class="glass-card p-6">
-                        <div class="flex items-center justify-between mb-6">
-                            <h3 class="text-2xl font-bold text-gray-800">Evolução Dinâmica - Efeito Tesoura</h3>
-                            <div class="tooltip">
-                                <span class="text-blue-500 text-xl cursor-help">ℹ️</span>
-                                <span class="tooltiptext">
-                                    <strong>O Efeito Tesoura é como uma tesoura se abrindo:</strong><br><br>
-                                    Quando a linha azul (dinheiro que a empresa precisa) fica acima da linha verde (dinheiro que ela tem guardado), é como se a tesoura estivesse se abrindo. Isso significa que a empresa pode ficar sem dinheiro para pagar as contas.
-                                </span>
-                            </div>
-                        </div>
-                        
-                        <div class="explanation-card mb-6">
-                            <div class="explanation-title">
-                                <svg class="icon-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                Como ler o gráfico:
-                            </div>
-                            <div class="explanation-text">
-                                <strong>🔵 Linha Azul (NCG):</strong> Quanto dinheiro a empresa precisa para funcionar<br>
-                                <strong>🟢 Linha Verde (CDG):</strong> Quanto dinheiro a empresa tem de reserva<br>
-                                <strong>🟣 Linha Roxa (Tesouraria):</strong> Quanto dinheiro sobra no final<br><br>
-                                <strong>⚠️ Atenção:</strong> Quando a linha azul cruza acima da verde, a empresa pode ter problemas para pagar as contas!
-                            </div>
-                        </div>
-
-                        <div class="chart-container">
-                            <canvas id="tesouraChart"></canvas>
-                        </div>
+                    <div class="bg-white/80 backdrop-blur-sm rounded-lg shadow-md p-2 sticky top-4 z-50">
+                        <nav id="analysis-tabs" class="flex justify-center flex-wrap gap-2 sm:gap-4">
+                            <button data-tab="fleuriet" class="tab-item active">Saúde Financeira (Fleuriet)</button>
+                            <button data-tab="valuation" class="tab-item">Valuation e Ranking</button>
+                        </nav>
                     </div>
 
-                    <!-- Detailed Analysis Tables -->
-                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                        <!-- Summary Table -->
-                        <div class="glass-card p-6">
-                            <h3 class="text-xl font-bold text-gray-800 mb-4">Resumo Comparativo Anual</h3>
-                            <div class="table-container">
-                                <table class="enhanced-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Indicador</th>
-                                            {% for res in results.yearly_results %}
-                                            <th class="text-center">{{ res.year }}</th>
-                                            {% endfor %}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% set indicators_to_show = {
-                                            'Estrutura': 'structure', 
-                                            'NCG (R$ mil)': 'base_indicators.NCG', 
-                                            'CDG (R$ mil)': 'base_indicators.CDG', 
-                                            'Tesouraria (R$ mil)': 'base_indicators.T',
-                                            'ILD': 'advanced_indicators.ILD', 
-                                            'ROIC (%)': 'advanced_indicators.ROIC', 
-                                            'Z-Score': 'advanced_indicators.Z_Score', 
-                                            'Risco Z-Score': 'advanced_indicators.Z_Risk'
-                                        } %}
-                                        
-                                        {% for name, key in indicators_to_show.items() %}
-                                        <tr>
-                                            <td class="tooltip">
-                                                {{ name }}
-                                                {% if 'Estrutura' in name %}
-                                                    <span class="tooltiptext">
-                                                        <strong>Estrutura Financeira é como a saúde geral da empresa:</strong><br><br>
-                                                        🟢 <strong>Ótima/Excelente:</strong> Empresa muito saudável<br>
-                                                        🔵 <strong>Boa:</strong> Empresa saudável<br>
-                                                        🟡 <strong>Risco:</strong> Empresa precisa de cuidado<br>
-                                                        🔴 <strong>Ruim:</strong> Empresa com problemas sérios
-                                                    </span>
-                                                {% elif 'NCG' in name %}
-                                                    <span class="tooltiptext">
-                                                        <strong>NCG - Necessidade de Capital de Giro:</strong><br><br>
-                                                        É o dinheiro que a empresa precisa para funcionar todo dia. Como o dinheiro que você precisa para comprar lanche na escola antes de receber sua mesada.
-                                                    </span>
-                                                {% elif 'CDG' in name %}
-                                                    <span class="tooltiptext">
-                                                        <strong>CDG - Capital de Giro:</strong><br><br>
-                                                        É a reserva de dinheiro da empresa. Como ter dinheiro guardado no cofrinho para emergências.
-                                                    </span>
-                                                {% elif 'Tesouraria' in name %}
-                                                    <span class="tooltiptext">
-                                                        <strong>Tesouraria:</strong><br><br>
-                                                        É quanto dinheiro sobra depois de pagar tudo. Como o troco que sobra depois de comprar algo.
-                                                    </span>
-                                                {% elif 'ILD' in name %}
-                                                    <span class="tooltiptext">
-                                                        <strong>ILD - Índice de Liquidez Dinâmica:</strong><br><br>
-                                                        Mostra se a empresa consegue pagar suas contas rapidamente. Quanto maior, melhor!
-                                                    </span>
-                                                {% elif 'ROIC' in name %}
-                                                    <span class="tooltiptext">
-                                                        <strong>ROIC - Retorno sobre Capital Investido:</strong><br><br>
-                                                        Mostra quanto dinheiro a empresa ganha para cada real investido. É como saber quanto você ganha de juros na poupança.
-                                                    </span>
-                                                {% elif 'Z-Score' in name and 'Risco' not in name %}
-                                                    <span class="tooltiptext">
-                                                        <strong>Z-Score de Prado:</strong><br><br>
-                                                        É uma nota que mostra se a empresa está saudável. Quanto maior a nota, melhor a empresa está.
-                                                    </span>
-                                                {% elif 'Risco' in name %}
-                                                    <span class="tooltiptext">
-                                                        <strong>Risco Z-Score:</strong><br><br>
-                                                        🟢 <strong>Baixo:</strong> Empresa muito segura<br>
-                                                        🟡 <strong>Médio:</strong> Empresa com algum risco<br>
-                                                        🔴 <strong>Alto:</strong> Empresa com muito risco
-                                                    </span>
-                                                {% endif %}
-                                            </td>
-                                            {% for res in results.yearly_results %}
-                                            <td class="text-center">
-                                                {% if name == 'Estrutura' %}
-                                                    {% set structure_class = 'structure-optimal' if 'Ótima' in res.structure or 'Excelente' in res.structure else ('structure-good' if 'Boa' in res.structure else ('structure-warning' if 'Risco' in res.structure else 'structure-danger')) %}
-                                                    <span class="status-badge {{ structure_class }}">{{ res.structure }}</span>
-                                                {% elif 'NCG' in name %}
-                                                    {% if res.base_indicators.NCG is not none %}
-                                                        R$ {{ "{:,.0f}".format(res.base_indicators.NCG / 1000) }}
-                                                    {% else %}
-                                                        N/A
-                                                    {% endif %}
-                                                {% elif 'CDG' in name %}
-                                                    {% if res.base_indicators.CDG is not none %}
-                                                        R$ {{ "{:,.0f}".format(res.base_indicators.CDG / 1000) }}
-                                                    {% else %}
-                                                        N/A
-                                                    {% endif %}
-                                                {% elif 'Tesouraria' in name %}
-                                                    {% if res.base_indicators.T is not none %}
-                                                        R$ {{ "{:,.0f}".format(res.base_indicators.T / 1000) }}
-                                                    {% else %}
-                                                        N/A
-                                                    {% endif %}
-                                                {% elif 'ILD' in name %}
-                                                    {% if res.advanced_indicators.ILD is not none %}
-                                                        {{ "%.4f"|format(res.advanced_indicators.ILD) }}
-                                                    {% else %}
-                                                        N/A
-                                                    {% endif %}
-                                                {% elif 'ROIC' in name %}
-                                                    {% if res.advanced_indicators.ROIC is not none %}
-                                                        {{ "%.2f"|format(res.advanced_indicators.ROIC) }}%
-                                                    {% else %}
-                                                        N/A
-                                                    {% endif %}
-                                                {% elif 'Z-Score' in name and 'Risco' not in name %}
-                                                    {% if res.advanced_indicators.Z_Score is not none %}
-                                                        {{ "%.2f"|format(res.advanced_indicators.Z_Score) }}
-                                                    {% else %}
-                                                        N/A
-                                                    {% endif %}
-                                                {% elif 'Risco' in name %}
-                                                    {{ res.advanced_indicators.Z_Risk if res.advanced_indicators.Z_Risk is not none else 'N/A' }}
-                                                {% else %}
-                                                    N/A
-                                                {% endif %}
-                                            </td>
-                                            {% endfor %}
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
+                    <div id="tab-content">
+                        <div id="fleuriet-content" class="tab-pane active">
+                            {% include 'partials/_fleuriet_content.html' %}
                         </div>
-                        
-                        <!-- Operational Cycles Table -->
-                        <div class="glass-card p-6">
-                            <h3 class="text-xl font-bold text-gray-800 mb-4">Ciclos Operacionais (Prazos Médios)</h3>
-                            
-                            <div class="explanation-card mb-4">
-                                <div class="explanation-title">
-                                    <svg class="icon-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                    Entendendo os Prazos:
-                                </div>
-                                <div class="explanation-text">
-                                    <strong>PMR:</strong> Quantos dias a empresa demora para receber o dinheiro das vendas<br>
-                                    <strong>PME:</strong> Quantos dias os produtos ficam no estoque<br>
-                                    <strong>PMP:</strong> Quantos dias a empresa demora para pagar os fornecedores<br>
-                                    <strong>Ciclo Financeiro:</strong> Quantos dias a empresa fica sem dinheiro
-                                </div>
-                            </div>
-
-                            <div class="table-container">
-                                <table class="enhanced-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Prazo (dias)</th>
-                                            {% for res in results.yearly_results %}
-                                            <th class="text-center">{{ res.year }}</th>
-                                            {% endfor %}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% set cycle_indicators = {
-                                            'PMR - Recebimento': 'advanced_indicators.PMR', 
-                                            'PME - Estocagem': 'advanced_indicators.PME', 
-                                            'PMP - Pagamento': 'advanced_indicators.PMP', 
-                                            'Ciclo Financeiro': 'advanced_indicators.Ciclo_Financeiro'
-                                        } %}
-                                        
-                                        {% for name, key in cycle_indicators.items() %}
-                                        <tr class="{{ 'bg-gray-50 font-bold' if 'Ciclo' in name else '' }}">
-                                            <td class="tooltip">
-                                                {{ name }}
-                                                {% if 'PMR' in name %}
-                                                    <span class="tooltiptext">
-                                                        <strong>PMR - Prazo Médio de Recebimento:</strong><br><br>
-                                                        É como quando você vende um brinquedo para um amigo e ele promete te pagar depois. O PMR é quantos dias você demora para receber esse dinheiro.
-                                                    </span>
-                                                {% elif 'PME' in name %}
-                                                    <span class="tooltiptext">
-                                                        <strong>PME - Prazo Médio de Estocagem:</strong><br><br>
-                                                        É quanto tempo os produtos ficam guardados antes de serem vendidos. Como os brinquedos que ficam na prateleira da loja esperando alguém comprar.
-                                                    </span>
-                                                {% elif 'PMP' in name %}
-                                                    <span class="tooltiptext">
-                                                        <strong>PMP - Prazo Médio de Pagamento:</strong><br><br>
-                                                        É quanto tempo a empresa demora para pagar quem vendeu produtos para ela. Como quando você compra algo e pede para pagar depois.
-                                                    </span>
-                                                {% elif 'Ciclo' in name %}
-                                                    <span class="tooltiptext">
-                                                        <strong>Ciclo Financeiro:</strong><br><br>
-                                                        É por quantos dias a empresa fica "sem dinheiro" esperando receber das vendas. Quanto menor, melhor para a empresa!
-                                                    </span>
-                                                {% endif %}
-                                            </td>
-                                            {% for res in results.yearly_results %}
-                                            <td class="text-center">
-                                                {% if 'PMR' in name %}
-                                                    {% if res.advanced_indicators.PMR is not none %}
-                                                        {{ "%.0f"|format(res.advanced_indicators.PMR) }}
-                                                    {% else %}
-                                                        N/A
-                                                    {% endif %}
-                                                {% elif 'PME' in name %}
-                                                    {% if res.advanced_indicators.PME is not none %}
-                                                        {{ "%.0f"|format(res.advanced_indicators.PME) }}
-                                                    {% else %}
-                                                        N/A
-                                                    {% endif %}
-                                                {% elif 'PMP' in name %}
-                                                    {% if res.advanced_indicators.PMP is not none %}
-                                                        {{ "%.0f"|format(res.advanced_indicators.PMP) }}
-                                                    {% else %}
-                                                        N/A
-                                                    {% endif %}
-                                                {% elif 'Ciclo' in name %}
-                                                    {% if res.advanced_indicators.Ciclo_Financeiro is not none %}
-                                                        {{ "%.0f"|format(res.advanced_indicators.Ciclo_Financeiro) }}
-                                                    {% else %}
-                                                        N/A
-                                                    {% endif %}
-                                                {% else %}
-                                                    N/A
-                                                {% endif %}
-                                            </td>
-                                            {% endfor %}
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
+                        <div id="valuation-content" class="tab-pane">
+                            <div id="valuation-placeholder" class="text-center p-8 glass-card">
+                                <div class="loading-spinner mx-auto"></div>
+                                <p class="text-gray-600 mt-4">Carregando análise de Valuation...</p>
                             </div>
                         </div>
                     </div>
                 </div>
-
-                <script>
-                    document.addEventListener('DOMContentLoaded', function() {
-                        const chartData = JSON.parse('{{ chart_data_json | safe }}');
-                        
-                        if (chartData && chartData.labels && chartData.labels.length > 0) {
-                            const ctx = document.getElementById('tesouraChart').getContext('2d');
-                            new Chart(ctx, {
-                                type: 'line',
-                                data: {
-                                    labels: chartData.labels,
-                                    datasets: [
-                                        {
-                                            label: 'NCG (Necessidade de Capital de Giro)',
-                                            data: chartData.ncg,
-                                            borderColor: '#3b82f6',
-                                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                            borderWidth: 4,
-                                            fill: false,
-                                            tension: 0.1,
-                                            pointBackgroundColor: '#3b82f6',
-                                            pointBorderColor: '#ffffff',
-                                            pointBorderWidth: 2,
-                                            pointRadius: 6,
-                                            pointHoverRadius: 8
-                                        },
-                                        {
-                                            label: 'CDG (Capital de Giro)',
-                                            data: chartData.cdg,
-                                            borderColor: '#10b981',
-                                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                                            borderWidth: 4,
-                                            fill: false,
-                                            tension: 0.1,
-                                            pointBackgroundColor: '#10b981',
-                                            pointBorderColor: '#ffffff',
-                                            pointBorderWidth: 2,
-                                            pointRadius: 6,
-                                            pointHoverRadius: 8
-                                        },
-                                        {
-                                            label: 'Tesouraria (T)',
-                                            data: chartData.t,
-                                            borderColor: '#8b5cf6',
-                                            backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                                            borderWidth: 3,
-                                            borderDash: [5, 5],
-                                            fill: false,
-                                            tension: 0.1,
-                                            pointBackgroundColor: '#8b5cf6',
-                                            pointBorderColor: '#ffffff',
-                                            pointBorderWidth: 2,
-                                            pointRadius: 5,
-                                            pointHoverRadius: 7
-                                        }
-                                    ]
-                                },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    plugins: {
-                                        title: {
-                                            display: true,
-                                            text: 'Evolução dos Indicadores Fleuriet (R$ Milhões)',
-                                            font: {
-                                                size: 16,
-                                                weight: 'bold'
-                                            },
-                                            color: '#1f2937'
-                                        },
-                                        legend: {
-                                            position: 'top',
-                                            labels: {
-                                                usePointStyle: true,
-                                                padding: 20,
-                                                font: {
-                                                    size: 12,
-                                                    weight: '500'
-                                                }
-                                            }
-                                        },
-                                        tooltip: {
-                                            mode: 'index',
-                                            intersect: false,
-                                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                                            titleColor: '#ffffff',
-                                            bodyColor: '#ffffff',
-                                            borderColor: '#4f46e5',
-                                            borderWidth: 1,
-                                            cornerRadius: 8,
-                                            callbacks: {
-                                                label: function(context) {
-                                                    let label = context.dataset.label || '';
-                                                    if (label) {
-                                                        label += ': ';
-                                                    }
-                                                    if (context.parsed.y !== null) {
-                                                        label += new Intl.NumberFormat('pt-BR', { 
-                                                            style: 'currency', 
-                                                            currency: 'BRL',
-                                                            minimumFractionDigits: 0,
-                                                            maximumFractionDigits: 0
-                                                        }).format(context.parsed.y);
-                                                    }
-                                                    return label;
-                                                }
-                                            }
-                                        }
-                                    },
-                                    scales: {
-                                        x: {
-                                            title: {
-                                                display: true,
-                                                text: 'Ano',
-                                                font: {
-                                                    size: 14,
-                                                    weight: '600'
-                                                },
-                                                color: '#374151'
-                                            },
-                                            grid: {
-                                                color: 'rgba(0, 0, 0, 0.05)'
-                                            }
-                                        },
-                                        y: {
-                                            title: {
-                                                display: true,
-                                                text: 'Valor (R$)',
-                                                font: {
-                                                    size: 14,
-                                                    weight: '600'
-                                                },
-                                                color: '#374151'
-                                            },
-                                            grid: {
-                                                color: 'rgba(0, 0, 0, 0.1)'
-                                            },
-                                            ticks: {
-                                                callback: function(value) {
-                                                    if (value === null || value === undefined) return '';
-                                                    if (Math.abs(value) >= 1.0e+9) {
-                                                        return 'R$ ' + (value / 1.0e+9).toFixed(1) + 'B';
-                                                    } else if (Math.abs(value) >= 1.0e+6) {
-                                                        return 'R$ ' + (value / 1.0e+6).toFixed(1) + 'M';
-                                                    } else if (Math.abs(value) >= 1.0e+3) {
-                                                        return 'R$ ' + (value / 1.0e+3).toFixed(1) + 'k';
-                                                    }
-                                                    return 'R$ ' + value;
-                                                }
-                                            }
-                                        }
-                                    },
-                                    interaction: {
-                                        mode: 'nearest',
-                                        axis: 'x',
-                                        intersect: false
-                                    }
-                                }
-                            });
-                        } else {
-                            document.getElementById('tesouraChart').innerHTML = `
-                                <div class="flex items-center justify-center h-full text-gray-500">
-                                    <p>Dados insuficientes para exibir o gráfico</p>
-                                </div>
-                            `;
-                        }
-                    });
-                </script>
-
+            {% elif error %}
+                <div class="glass-card p-6 text-center border-2 border-red-200">
+                    <h3 class="text-xl font-bold text-red-700">Erro na Análise</h3>
+                    <p class="text-red-600 mt-2">{{ error }}</p>
+                </div>
             {% endif %}
+            
+            <footer class="text-center mt-12 pt-6 border-t border-gray-200">
+                <p class="text-xs text-gray-500 max-w-4xl mx-auto"><strong>Disclaimer:</strong> As informações apresentadas destinam-se a fins educacionais e não constituem recomendação de investimento.</p>
+            </footer>
         </div>
     </div>
 
     <script>
-        // Adicionar loader durante o processamento
-        document.getElementById('analysisForm').addEventListener('submit', function() {
-            const loadingOverlay = document.getElementById('loadingOverlay');
-            const btn = document.getElementById('submitBtn');
-            const btnText = document.getElementById('btnText');
-            
-            // Mostrar overlay de loading
-            loadingOverlay.classList.add('active');
-            
-            // Desabilitar botão e alterar texto
-            btn.disabled = true;
-            btnText.textContent = 'Processando...';
-            
-            // Adicionar classe de loading ao botão
-            btn.classList.add('opacity-75', 'cursor-not-allowed');
-        });
+        // --- ESTADO GLOBAL E VARIÁVEIS ---
+        const fleurietResults = JSON.parse('{{ fleuriet_results | tojson | safe if fleuriet_results else 'null' }}');
+        const companiesList = JSON.parse('{{ companies | tojson | safe if companies else '[]' }}');
+        let valuationData = null;
+        let charts = {};
+        let currentValuationView = 'overview';
+        let currentTicker = null;
+        let sortConfig = { key: 'Upside', direction: 'desc' };
 
-        // Validação dinâmica dos anos
-        document.getElementById('start_year').addEventListener('change', function() {
-            const startYear = parseInt(this.value);
-            const endYearSelect = document.getElementById('end_year');
-            const endYear = parseInt(endYearSelect.value);
-            
-            if (startYear > endYear) {
-                endYearSelect.value = this.value;
-            }
-        });
+        // --- FUNÇÕES DE FORMATAÇÃO ---
+        const formatCurrency = (v) => v === null || isNaN(v) ? 'N/D' : `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const formatPercentage = (v) => v === null || isNaN(v) ? 'N/D' : `${(v * 100).toFixed(2)}%`;
+        const getSemanticColor = (v) => v === null || isNaN(v) ? 'text-gray-600' : (v >= 0 ? 'text-green-600' : 'text-red-600');
 
-        document.getElementById('end_year').addEventListener('change', function() {
-            const endYear = parseInt(this.value);
-            const startYearSelect = document.getElementById('start_year');
-            const startYear = parseInt(startYearSelect.value);
-            
-            if (endYear < startYear) {
-                startYearSelect.value = this.value;
-            }
-        });
-
-        // Inicialização
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('Analisador Fleuriet carregado com sucesso!');
-            
-            // Adicionar animações aos cards
-            const cards = document.querySelectorAll('.metric-card, .glass-card');
-            cards.forEach((card, index) => {
-                card.style.animationDelay = `${index * 0.1}s`;
-                card.classList.add('fade-in');
+        // --- LÓGICA DE INICIALIZAÇÃO ---
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('analysisForm').addEventListener('submit', () => {
+                document.getElementById('loadingOverlay').classList.add('active');
+                document.getElementById('loadingText').innerText = 'Analisando...';
             });
 
-            // Esconder loading overlay se estiver visível
-            const loadingOverlay = document.getElementById('loadingOverlay');
-            if (loadingOverlay.classList.contains('active')) {
-                loadingOverlay.classList.remove('active');
+            if (fleurietResults) {
+                setupTabs();
+                renderFleurietChart();
+                loadAndRenderValuationData();
             }
         });
-    </script>
 
+        // --- CONTROLE DE ABAS ---
+        function setupTabs() {
+            const tabs = document.querySelectorAll('.tab-item');
+            const panes = document.querySelectorAll('.tab-pane');
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(t => t.classList.remove('active'));
+                    panes.forEach(p => p.classList.remove('active'));
+                    tab.classList.add('active');
+                    document.getElementById(tab.dataset.tab + '-content').classList.add('active');
+                });
+            });
+        }
+
+        // --- RENDERIZAÇÃO DA ABA FLEURIET ---
+        function renderFleurietChart() { /* ... Lógica do gráfico Fleuriet ... */ }
+
+        // --- RENDERIZAÇÃO DA ABA VALUATION ---
+        async function loadAndRenderValuationData() {
+            if (valuationData) { renderValuationSubView(); return; }
+            try {
+                const response = await fetch('/get_valuation_data');
+                if (!response.ok) throw new Error(`Falha na API: ${response.statusText}`);
+                valuationData = await response.json();
+                if (valuationData.error) throw new Error(valuationData.error);
+                renderValuationSubView();
+            } catch (error) {
+                console.error("Erro ao carregar dados de valuation:", error);
+                document.getElementById('valuation-placeholder').innerHTML = `<p class="text-red-500 p-4">Não foi possível carregar a análise de Valuation: ${error.message}</p>`;
+            }
+        }
+
+        function renderValuationSubView() {
+            const container = document.getElementById('valuation-content');
+            if (!valuationData || valuationData.length === 0) {
+                container.innerHTML = `<div class="glass-card p-6 text-center"><p>Nenhum dado de valuation disponível ou que passou nos filtros de sanidade.</p></div>`;
+                return;
+            }
+            
+            const nav = `
+                <nav id="valuation-navigation" class="flex justify-center items-center border-b border-gray-200 mb-8 bg-white/70 backdrop-blur-sm rounded-lg shadow-sm">
+                    <div data-view="overview" class="nav-item">Visão Geral</div>
+                    <div data-view="ranking" class="nav-item">Ranking Completo</div>
+                    <div data-view="details" class="nav-item">Análise Detalhada</div>
+                </nav>
+                <div id="valuation-app-content"></div>
+            `;
+            container.innerHTML = nav;
+            
+            document.querySelectorAll('#valuation-navigation .nav-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.view === currentValuationView);
+                item.addEventListener('click', () => {
+                    currentValuationView = item.dataset.view;
+                    renderValuationSubView();
+                });
+            });
+
+            const contentEl = document.getElementById('valuation-app-content');
+            switch (currentValuationView) {
+                case 'overview': contentEl.innerHTML = getValuationOverviewHTML(valuationData); break;
+                case 'ranking': contentEl.innerHTML = getValuationRankingHTML(valuationData); break;
+                case 'details': contentEl.innerHTML = getValuationDetailsHTML(valuationData); break;
+                default: contentEl.innerHTML = getValuationOverviewHTML(valuationData);
+            }
+            postRenderValuation(valuationData);
+        }
+
+        function postRenderValuation(data) {
+            if (currentValuationView === 'overview') {
+                const top5 = [...data].sort((a, b) => b.Upside - a.Upside).slice(0, 5);
+                createValuationBarChart(top5.reverse());
+            }
+            if (currentValuationView === 'ranking') {
+                document.getElementById('search-input').addEventListener('input', (e) => {
+                    document.getElementById('valuation-app-content').innerHTML = getValuationRankingHTML(data, e.target.value);
+                    postRenderValuation(data);
+                });
+                document.querySelectorAll('.sortable').forEach(header => header.addEventListener('click', () => {
+                    const sortKey = header.dataset.sortkey;
+                    sortConfig.direction = (sortConfig.key === sortKey && sortConfig.direction === 'desc') ? 'asc' : 'desc';
+                    sortConfig.key = sortKey;
+                    document.getElementById('valuation-app-content').innerHTML = getValuationRankingHTML(data, document.getElementById('search-input').value);
+                    postRenderValuation(data);
+                }));
+            }
+            if (currentValuationView === 'details') {
+                document.getElementById('company-selector').addEventListener('change', (e) => {
+                    currentTicker = e.target.value;
+                    renderValuationSubView();
+                });
+                const company = data.find(c => c.Ticker === currentTicker);
+                if(company) {
+                    createRadarChart(company, data);
+                    createEvaChart(company);
+                }
+            }
+        }
+        
+        function getValuationOverviewHTML(data) { /* ... Lógica HTML da Visão Geral do Valuation ... */ return `<div>Conteúdo da Visão Geral do Valuation</div>`; }
+        function getValuationRankingHTML(data, searchTerm = '') { /* ... Lógica HTML do Ranking ... */ return `<div>Conteúdo do Ranking do Valuation</div>`; }
+        function getValuationDetailsHTML(data) {
+            if (!currentTicker && data.length > 0) {
+                currentTicker = data.sort((a,b) => b.Upside - a.Upside)[0].Ticker;
+            }
+            const company = data.find(c => c.Ticker === currentTicker);
+            if (!company) return `<div class="p-4 text-center">Selecione uma empresa para ver os detalhes.</div>`;
+
+            return `
+                <div class="space-y-8">
+                    <section class="bg-white p-4 sm:p-6 rounded-lg shadow-md border border-slate-200">
+                        <div class="flex flex-wrap justify-between items-center mb-6">
+                            <h2 class="text-2xl font-bold text-slate-900">Análise de: ${company.Nome} (${company.Ticker})</h2>
+                            <div class="w-full sm:w-auto mt-4 sm:mt-0">
+                                <select id="company-selector" class="w-full sm:w-64 p-2 border border-slate-300 rounded-lg">
+                                    ${data.map(c => `<option value="${c.Ticker}" ${c.Ticker === currentTicker ? 'selected' : ''}>${c.Nome} (${c.Ticker})</option>`).join('')}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                            <!-- Cards de métricas do valuation -->
+                        </div>
+                    </section>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <section class="data-card"><h3 class="text-xl font-bold text-slate-900 mb-4">Perfil vs. Média do Mercado</h3><div class="chart-container"><canvas id="radarChart"></canvas></div></section>
+                        <section class="data-card"><h3 class="text-xl font-bold text-slate-900 mb-4">Decomposição do EVA</h3><div class="chart-container"><canvas id="evaChart"></canvas></div></section>
+                    </div>
+                </div>
+            `;
+        }
+
+        function createValuationBarChart(data) { /* ... */ }
+        function createRadarChart(company, allData) { /* ... */ }
+        function createEvaChart(company) { /* ... */ }
+        function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+    </script>
 </body>
 </html>
