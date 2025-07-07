@@ -62,7 +62,7 @@ def get_companies_list(engine, ticker_mapping_df):
             df_companies_db = pd.read_sql(query, connection)
         df_companies_db.rename(columns={'DENOM_CIA': 'NOME_EMPRESA'}, inplace=True)
         final_df = pd.merge(df_companies_db, ticker_mapping_df, on='CD_CVM', how='left')
-        final_df['TICKER'].fillna('S/TICKER', inplace=True)
+        final_df['TICKER'] = final_df['TICKER'].fillna('S/TICKER')
         logger.info(f"{len(final_df)} empresas encontradas e mapeadas.")
         return final_df.to_dict(orient='records')
     except Exception as e:
