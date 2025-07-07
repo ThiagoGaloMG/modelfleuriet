@@ -1,119 +1,142 @@
-<!-- 
-  Este é o conteúdo da aba "Saúde Financeira (Fleuriet)".
-  As variáveis (ex: fleuriet_results) são passadas a partir do index.html principal.
--->
-<div class="space-y-8">
-    <!-- Cards de Métricas Principais -->
-    {% set latest = fleuriet_results.yearly_results[-1] %}
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div class="metric-card text-center">
-            <div class="text-2xl font-bold text-blue-600 mb-2">
-                {% if latest.base_indicators.NCG is number %}{{ "R$ {:,.0f}".format(latest.base_indicators.NCG / 1000) }}k{% else %}N/A{% endif %}
-            </div>
-            <div class="text-sm text-gray-600 mb-1">NCG - Necessidade de Capital de Giro</div>
-            <div class="text-xs text-gray-500">{{ latest.year }}</div>
+{% if analysis_results %}
+<div class="container mx-auto mt-8">
+    <h2 class="text-2xl font-bold mb-4">Resultados da Análise Fleuriet</h2>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+            <h3 class="text-lg font-semibold">Necessidade de Capital de Giro (NCG)</h3>
+            <table class="table-auto w-full border-collapse border border-gray-300">
+                <thead>
+                    <tr class="bg-gray-100">
+                        <th class="border border-gray-300 px-4 py-2">Ano</th>
+                        <th class="border border-gray-300 px-4 py-2">NCG</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for year, ncg in analysis_results.ncg.items() %}
+                    <tr>
+                        <td class="border border-gray-300 px-4 py-2">{{ year }}</td>
+                        <td class="border border-gray-300 px-4 py-2">{{ "{:,.2f}".format(ncg) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-        <div class="metric-card text-center">
-            <div class="text-2xl font-bold text-green-600 mb-2">
-                {% if latest.base_indicators.CDG is number %}{{ "R$ {:,.0f}".format(latest.base_indicators.CDG / 1000) }}k{% else %}N/A{% endif %}
-            </div>
-            <div class="text-sm text-gray-600 mb-1">CDG - Capital de Giro</div>
-            <div class="text-xs text-gray-500">{{ latest.year }}</div>
+        <div>
+            <h3 class="text-lg font-semibold">Capital de Giro (CDG)</h3>
+            <table class="table-auto w-full border-collapse border border-gray-300">
+                <thead>
+                    <tr class="bg-gray-100">
+                        <th class="border border-gray-300 px-4 py-2">Ano</th>
+                        <th class="border border-gray-300 px-4 py-2">CDG</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for year, cdg in analysis_results.cdg.items() %}
+                    <tr>
+                        <td class="border border-gray-300 px-4 py-2">{{ year }}</td>
+                        <td class="border border-gray-300 px-4 py-2">{{ "{:,.2f}".format(cdg) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-        <div class="metric-card text-center">
-            <div class="text-2xl font-bold text-purple-600 mb-2">
-                {% if latest.advanced_indicators.Z_Score is number %}{{ "%.2f"|format(latest.advanced_indicators.Z_Score) }}{% else %}N/A{% endif %}
-            </div>
-            <div class="text-sm text-gray-600 mb-1">Z-Score de Prado</div>
-            <div class="text-xs font-semibold">
-                {% if latest.advanced_indicators.Z_Risk and 'N/A' not in latest.advanced_indicators.Z_Risk and 'impossível' not in latest.advanced_indicators.Z_Risk|string and 'insuficientes' not in latest.advanced_indicators.Z_Risk|string %}{{ latest.advanced_indicators.Z_Risk }}{% else %}N/A{% endif %}
-            </div>
+        <div>
+            <h3 class="text-lg font-semibold">Saldo de Tesouraria (T)</h3>
+            <table class="table-auto w-full border-collapse border border-gray-300">
+                <thead>
+                    <tr class="bg-gray-100">
+                        <th class="border border-gray-300 px-4 py-2">Ano</th>
+                        <th class="border border-gray-300 px-4 py-2">T</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for year, t in analysis_results.t.items() %}
+                    <tr>
+                        <td class="border border-gray-300 px-4 py-2">{{ year }}</td>
+                        <td class="border border-gray-300 px-4 py-2">{{ "{:,.2f}".format(t) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div>
+            <h3 class="text-lg font-semibold">Tipologia Fleuriet</h3>
+            <table class="table-auto w-full border-collapse border border-gray-300">
+                <thead>
+                    <tr class="bg-gray-100">
+                        <th class="border border-gray-300 px-4 py-2">Ano</th>
+                        <th class="border border-gray-300 px-4 py-2">Tipo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for year, tipo in analysis_results.tipo.items() %}
+                    <tr>
+                        <td class="border border-gray-300 px-4 py-2">{{ year }}</td>
+                        <td class="border border-gray-300 px-4 py-2">{{ tipo }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 
-    <!-- Gráfico Efeito Tesoura -->
-    <div class="glass-card p-4 sm:p-6">
-        <h3 class="text-xl sm:text-2xl font-bold text-gray-800 text-center mb-4">Evolução Dinâmica - Efeito Tesoura</h3>
-        <div class="chart-container" style="height: 400px;">
-            <canvas id="tesouraChart"></canvas>
-        </div>
+    <!-- Gráficos -->
+    <div class="mt-8">
+        <h3 class="text-lg font-semibold">Evolução Temporal</h3>
+        <div id="ncg-chart"></div>
+        <div id="cdg-chart"></div>
+        <div id="t-chart"></div>
     </div>
 
-    <!-- Tabelas Detalhadas -->
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-8 mt-8">
-        <!-- Tabela Resumo Comparativo Anual -->
-        <div class="glass-card p-4 sm:p-6">
-            <h3 class="text-xl font-bold text-gray-800 mb-4">Resumo Comparativo Anual</h3>
-            <div class="table-container">
-                <table class="enhanced-table">
-                    <thead>
-                        <tr>
-                            <th class="px-4 py-3">Indicador</th>
-                            {% for res in fleuriet_results.yearly_results %}
-                                <th class="px-4 py-3 text-center">{{ res.year }}</th>
-                            {% endfor %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% set indicators = {
-                            'Estrutura': ('structure', ''), 'NCG (R$ mil)': ('base_indicators.NCG', 'currency'),
-                            'CDG (R$ mil)': ('base_indicators.CDG', 'currency'), 'Tesouraria (R$ mil)': ('base_indicators.T', 'currency'),
-                            'ILD': ('advanced_indicators.ILD', 'float'), 'ROIC (%)': ('advanced_indicators.ROIC', 'percent'),
-                            'Z-Score': ('advanced_indicators.Z_Score', 'float'), 'Risco Z-Score': ('advanced_indicators.Z_Risk', '')
-                        } %}
-                        {% for name, (key, type) in indicators.items() %}
-                        <tr>
-                            <td class="px-4 py-3 font-medium">{{ name }}</td>
-                            {% for res in fleuriet_results.yearly_results %}
-                                <td class="px-4 py-3 text-center">
-                                    {% set val = res[key.split('.')[0]][key.split('.')[1]] if '.' in key else res[key] %}
-                                    {% if val is not none and val != 'N/A' and 'impossível' not in val|string and 'insuficientes' not in val|string %}
-                                        {% if type == 'currency' %}R$ {{ "{:,.0f}".format(val / 1000) }}{% elif type == 'percent' %}{{ "%.2f"|format(val) }}%{% elif type == 'float' %}{{ "%.4f"|format(val) }}{% else %}{{ val }}{% endif %}
-                                    {% else %}N/A{% endif %}
-                                </td>
-                            {% endfor %}
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        
-        <!-- Tabela Ciclos Operacionais -->
-        <div class="glass-card p-4 sm:p-6">
-            <h3 class="text-xl font-bold text-gray-800 mb-4">Ciclos Operacionais (Prazos Médios)</h3>
-            {% if fleuriet_results.yearly_results and fleuriet_results.yearly_results[0].advanced_indicators.PMR is not none %}
-                <div class="table-container">
-                    <table class="enhanced-table">
-                        <thead>
-                            <tr>
-                                <th class="px-4 py-3">Prazo (dias)</th>
-                                {% for res in fleuriet_results.yearly_results %}<th class="px-4 py-3 text-center">{{ res.year }}</th>{% endfor %}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% set cycle_indicators = {'PMR': 'PMR', 'PME': 'PME', 'PMP': 'PMP', 'Ciclo Financeiro': 'Ciclo_Financeiro'} %}
-                            {% for name, key in cycle_indicators.items() %}
-                            <tr>
-                                <td class="px-4 py-3 font-medium">{{ name }}</td>
-                                {% for res in fleuriet_results.yearly_results %}
-                                <td class="px-4 py-3 text-center">
-                                    {% set val = res.advanced_indicators[key] %}
-                                    {% if val is not none %}{{ "%.0f"|format(val) }}{% else %}N/A{% endif %}
-                                </td>
-                                {% endfor %}
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% else %}
-                <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded-r-lg" role="alert">
-                    <p class="font-bold">Aviso</p>
-                    <p>Indicadores de ciclo operacional (PMR, PME, PMP) não se aplicam ou não puderam ser calculados para esta empresa (ex: setor financeiro, holding).</p>
-                </div>
-            {% endif %}
-        </div>
-    </div>
+    <script>
+        // Gráfico NCG
+        var ncgTrace = {
+            x: {{ analysis_results.ncg.keys() | tojson }},
+            y: {{ analysis_results.ncg.values() | tojson }},
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: 'NCG'
+        };
+        var ncgLayout = {
+            title: 'Necessidade de Capital de Giro (NCG)',
+            xaxis: { title: 'Ano' },
+            yaxis: { title: 'NCG' }
+        };
+        Plotly.newPlot('ncg-chart', [ncgTrace], ncgLayout);
+
+        // Gráfico CDG
+        var cdgTrace = {
+            x: {{ analysis_results.cdg.keys() | tojson }},
+            y: {{ analysis_results.cdg.values() | tojson }},
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: 'CDG'
+        };
+        var cdgLayout = {
+            title: 'Capital de Giro (CDG)',
+            xaxis: { title: 'Ano' },
+            yaxis: { title: 'CDG' }
+        };
+        Plotly.newPlot('cdg-chart', [cdgTrace], cdgLayout);
+
+        // Gráfico T
+        var tTrace = {
+            x: {{ analysis_results.t.keys() | tojson }},
+            y: {{ analysis_results.t.values() | tojson }},
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: 'T'
+        };
+        var tLayout = {
+            title: 'Saldo de Tesouraria (T)',
+            xaxis: { title: 'Ano' },
+            yaxis: { title: 'T' }
+        };
+        Plotly.newPlot('t-chart', [tTrace], tLayout);
+    </script>
+</div>
+{% else %}
+<div class="container mx-auto mt-8">
+    <p class="text-gray-600">Nenhum resultado de análise disponível. Por favor, selecione uma empresa e envie o formulário.</p>
 </div>
 {% endif %}
