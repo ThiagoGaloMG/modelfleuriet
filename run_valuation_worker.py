@@ -20,7 +20,7 @@ if not DB_URL:
 CONN_STR = DB_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 DB_ENGINE = create_engine(CONN_STR)
 VALUATION_TABLE_NAME = 'valuation_results'
-TICKER_MAPPING_PATH = 'data/mapeamento_tickers.csv'  # Caminho do arquivo CSV de mapeamento
+TICKER_MAPPING_PATH = 'data/mapeamento_tickers.csv'
 
 def create_valuation_table():
     """Cria a tabela para armazenar os resultados do valuation, se não existir."""
@@ -43,6 +43,7 @@ def create_valuation_table():
     try:
         with DB_ENGINE.connect() as connection:
             connection.execute(create_query)
+            connection.commit()
         logger.info("Tabela de valuation criada com sucesso.")
     except SQLAlchemyError as e:
         logger.error(f"Falha ao criar tabela de valuation: {e}")
