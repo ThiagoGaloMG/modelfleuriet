@@ -16,8 +16,8 @@ services:
 
 jobs:
   - name: run-valuation
-    type: cron
-    schedule: "0 3 * * *"
+    type: cron  # Corrigido de 'script' para 'cron'
+    schedule: "0 3 * * *"  # Executa às 3h UTC (00h BRT)
     command: "python run_valuation_worker.py"
     envVars:
       - key: DATABASE_URL
