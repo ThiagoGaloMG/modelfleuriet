@@ -1,0 +1,514 @@
+            <!-- Results Section -->
+            {% if results %}
+                <div class="fade-in space-y-8">
+                    <!-- Company Header -->
+                    <div class="text-center glass-card p-6">
+                        <h2 class="text-3xl font-bold text-gray-800 mb-2">{{ results.company_name }}</h2>
+                        <p class="text-lg text-gray-600">CVM: {{ results.cvm_code }}</p>
+                    </div>
+
+                    <!-- Key Metrics Overview -->
+                    {% if results.yearly_results %}
+                        {% set latest = results.yearly_results[-1] %}
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            <div class="metric-card text-center">
+                                <div class="text-2xl font-bold text-blue-600 mb-2">
+                                    {% if latest.base_indicators.NCG is number %}
+                                        R$ {{ "{:,.0f}".format(latest.base_indicators.NCG / 1000) }}k
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </div>
+                                <div class="text-sm text-gray-600 mb-1 tooltip">
+                                    NCG - Necessidade de Capital de Giro
+                                    <span class="tooltiptext">
+                                        <strong>NCG é como o dinheiro que a empresa precisa para funcionar todo dia.</strong><br><br>
+                                        Imagine uma loja: ela precisa comprar produtos para vender, pagar funcionários e esperar os clientes pagarem. A NCG é exatamente esse dinheiro necessário para manter a loja funcionando enquanto espera receber das vendas.
+                                    </span>
+                                </div>
+                                <div class="text-xs text-gray-500">{{ latest.year }}</div>
+                            </div>
+
+                            <div class="metric-card text-center">
+                                <div class="text-2xl font-bold text-green-600 mb-2">
+                                    {% if latest.base_indicators.CDG is number %}
+                                        R$ {{ "{:,.0f}".format(latest.base_indicators.CDG / 1000) }}k
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </div>
+                                <div class="text-sm text-gray-600 mb-1 tooltip">
+                                    CDG - Capital de Giro
+                                    <span class="tooltiptext">
+                                        <strong>CDG é como uma reserva de dinheiro que a empresa tem para emergências.</strong><br><br>
+                                        É como ter uma poupança: quando a empresa precisa de dinheiro extra para pagar contas ou investir, ela usa essa reserva. Quanto maior o CDG, mais segura a empresa está.
+                                    </span>
+                                </div>
+                                <div class="text-xs text-gray-500">{{ latest.year }}</div>
+                            </div>
+
+                            <div class="metric-card text-center">
+                                <div class="text-2xl font-bold text-purple-600 mb-2">
+                                    {% if latest.advanced_indicators.Z_Score is number %}
+                                        {{ "%.2f"|format(latest.advanced_indicators.Z_Score) }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </div>
+                                <div class="text-sm text-gray-600 mb-1 tooltip">
+                                    Z-Score de Prado
+                                    <span class="tooltiptext">
+                                        <strong>Z-Score é como uma nota da escola para a empresa.</strong><br><br>
+                                        Quanto maior a nota, melhor a empresa está financeiramente. É como se fosse um termômetro que mostra se a empresa está saudável (nota alta) ou se pode ter problemas (nota baixa).
+                                    </span>
+                                </div>
+                                <div class="text-xs">
+                                    {% if latest.advanced_indicators.Z_Risk != 'N/A' %}
+                                        {% set risk_class = 'risk-low' if 'Baixo' in latest.advanced_indicators.Z_Risk else ('risk-medium' if 'Médio' in latest.advanced_indicators.Z_Risk else 'risk-high') %}
+                                        <span class="risk-indicator {{ risk_class }}"></span>{{ latest.advanced_indicators.Z_Risk }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                    <!-- Scissors Effect Chart -->
+                    <div class="glass-card p-6">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="text-2xl font-bold text-gray-800">Evolução Dinâmica - Efeito Tesoura</h3>
+                            <div class="tooltip">
+                                <span class="text-blue-500 text-xl cursor-help">??</span>
+                                <span class="tooltiptext">
+                                    <strong>O Efeito Tesoura é como uma tesoura se abrindo:</strong><br><br>
+                                    Quando a linha azul (dinheiro que a empresa precisa) fica acima da linha verde (dinheiro que ela tem guardado), é como se a tesoura estivesse se abrindo. Isso significa que a empresa pode ficar sem dinheiro para pagar as contas.
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div class="explanation-card mb-6">
+                            <div class="explanation-title">
+                                <svg class="icon-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                Como ler o gráfico:
+                            </div>
+                            <div class="explanation-text">
+                                <strong>?? Linha Azul (NCG):</strong> Quanto dinheiro a empresa precisa para funcionar<br>
+                                <strong>?? Linha Verde (CDG):</strong> Quanto dinheiro a empresa tem de reserva<br>
+                                <strong>?? Linha Roxa (Tesouraria):</strong> Quanto dinheiro sobra no final<br><br>
+                                <strong>?? Atenção:</strong> Quando a linha azul cruza acima da verde, a empresa pode ter problemas para pagar as contas!
+                            </div>
+                        </div>
+
+                        <div class="chart-container">
+                            <canvas id="tesouraChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Detailed Analysis Tables -->
+                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                        <!-- Summary Table -->
+                        <div class="glass-card p-6">
+                            <h3 class="text-xl font-bold text-gray-800 mb-4">Resumo Comparativo Anual</h3>
+                            <div class="table-container">
+                                <table class="enhanced-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Indicador</th>
+                                            {% for res in results.yearly_results %}
+                                            <th class="text-center">{{ res.year }}</th>
+                                            {% endfor %}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% set indicators_to_show = {
+                                            'Estrutura': 'structure', 
+                                            'NCG (R$ mil)': 'base_indicators.NCG', 
+                                            'CDG (R$ mil)': 'base_indicators.CDG', 
+                                            'Tesouraria (R$ mil)': 'base_indicators.T',
+                                            'ILD': 'advanced_indicators.ILD', 
+                                            'ROIC (%)': 'advanced_indicators.ROIC', 
+                                            'Z-Score': 'advanced_indicators.Z_Score', 
+                                            'Risco Z-Score': 'advanced_indicators.Z_Risk'
+                                        } %}
+                                        
+                                        {% for name, key in indicators_to_show.items() %}
+                                        <tr>
+                                            <td class="tooltip">
+                                                {{ name }}
+                                                {% if 'Estrutura' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>Estrutura Financeira é como a saúde geral da empresa:</strong><br><br>
+                                                        ?? <strong>Ótima/Excelente:</strong> Empresa muito saudável<br>
+                                                        ?? <strong>Boa:</strong> Empresa saudável<br>
+                                                        ?? <strong>Risco:</strong> Empresa precisa de cuidado<br>
+                                                        ?? <strong>Ruim:</strong> Empresa com problemas sérios
+                                                    </span>
+                                                {% elif 'NCG' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>NCG - Necessidade de Capital de Giro:</strong><br><br>
+                                                        É o dinheiro que a empresa precisa para funcionar todo dia. Como o dinheiro que você precisa para comprar lanche na escola antes de receber sua mesada.
+                                                    </span>
+                                                {% elif 'CDG' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>CDG - Capital de Giro:</strong><br><br>
+                                                        É a reserva de dinheiro da empresa. Como ter dinheiro guardado no cofrinho para emergências.
+                                                    </span>
+                                                {% elif 'Tesouraria' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>Tesouraria:</strong><br><br>
+                                                        É quanto dinheiro sobra depois de pagar tudo. Como o troco que sobra depois de comprar algo.
+                                                    </span>
+                                                {% elif 'ILD' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>ILD - Índice de Liquidez Dinâmica:</strong><br><br>
+                                                        Mostra se a empresa consegue pagar suas contas rapidamente. Quanto maior, melhor!
+                                                    </span>
+                                                {% elif 'ROIC' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>ROIC - Retorno sobre Capital Investido:</strong><br><br>
+                                                        Mostra quanto dinheiro a empresa ganha para cada real investido. É como saber quanto você ganha de juros na poupança.
+                                                    </span>
+                                                {% elif 'Z-Score' in name and 'Risco' not in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>Z-Score de Prado:</strong><br><br>
+                                                        É uma nota que mostra se a empresa está saudável. Quanto maior a nota, melhor a empresa está.
+                                                    </span>
+                                                {% elif 'Risco' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>Risco Z-Score:</strong><br><br>
+                                                        ?? <strong>Baixo:</strong> Empresa muito segura<br>
+                                                        ?? <strong>Médio:</strong> Empresa com algum risco<br>
+                                                        ?? <strong>Alto:</strong> Empresa com muito risco
+                                                    </span>
+                                                {% endif %}
+                                            </td>
+                                            {% for res in results.yearly_results %}
+                                            <td class="text-center">
+                                                {% if name == 'Estrutura' %}
+                                                    {% set structure_class = 'structure-optimal' if 'Ótima' in res.structure or 'Excelente' in res.structure else ('structure-good' if 'Boa' in res.structure else ('structure-warning' if 'Risco' in res.structure else 'structure-danger')) %}
+                                                    <span class="status-badge {{ structure_class }}">{{ res.structure }}</span>
+                                                {% elif 'NCG' in name %}
+                                                    {% if res.base_indicators.NCG is not none %}
+                                                        R$ {{ "{:,.0f}".format(res.base_indicators.NCG / 1000) }}
+                                                    {% else %}
+                                                        N/A
+                                                    {% endif %}
+                                                {% elif 'CDG' in name %}
+                                                    {% if res.base_indicators.CDG is not none %}
+                                                        R$ {{ "{:,.0f}".format(res.base_indicators.CDG / 1000) }}
+                                                    {% else %}
+                                                        N/A
+                                                    {% endif %}
+                                                {% elif 'Tesouraria' in name %}
+                                                    {% if res.base_indicators.T is not none %}
+                                                        R$ {{ "{:,.0f}".format(res.base_indicators.T / 1000) }}
+                                                    {% else %}
+                                                        N/A
+                                                    {% endif %}
+                                                {% elif 'ILD' in name %}
+                                                    {% if res.advanced_indicators.ILD is not none %}
+                                                        {{ "%.4f"|format(res.advanced_indicators.ILD) }}
+                                                    {% else %}
+                                                        N/A
+                                                    {% endif %}
+                                                {% elif 'ROIC' in name %}
+                                                    {% if res.advanced_indicators.ROIC is not none %}
+                                                        {{ "%.2f"|format(res.advanced_indicators.ROIC) }}%
+                                                    {% else %}
+                                                        N/A
+                                                    {% endif %}
+                                                {% elif 'Z-Score' in name and 'Risco' not in name %}
+                                                    {% if res.advanced_indicators.Z_Score is not none %}
+                                                        {{ "%.2f"|format(res.advanced_indicators.Z_Score) }}
+                                                    {% else %}
+                                                        N/A
+                                                    {% endif %}
+                                                {% elif 'Risco' in name %}
+                                                    {{ res.advanced_indicators.Z_Risk if res.advanced_indicators.Z_Risk is not none else 'N/A' }}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
+                                            {% endfor %}
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <!-- Operational Cycles Table -->
+                        <div class="glass-card p-6">
+                            <h3 class="text-xl font-bold text-gray-800 mb-4">Ciclos Operacionais (Prazos Médios)</h3>
+                            
+                            <div class="explanation-card mb-4">
+                                <div class="explanation-title">
+                                    <svg class="icon-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    Entendendo os Prazos:
+                                </div>
+                                <div class="explanation-text">
+                                    <strong>PMR:</strong> Quantos dias a empresa demora para receber o dinheiro das vendas<br>
+                                    <strong>PME:</strong> Quantos dias os produtos ficam no estoque<br>
+                                    <strong>PMP:</strong> Quantos dias a empresa demora para pagar os fornecedores<br>
+                                    <strong>Ciclo Financeiro:</strong> Quantos dias a empresa fica sem dinheiro
+                                </div>
+                            </div>
+
+                            <div class="table-container">
+                                <table class="enhanced-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Prazo (dias)</th>
+                                            {% for res in results.yearly_results %}
+                                            <th class="text-center">{{ res.year }}</th>
+                                            {% endfor %}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% set cycle_indicators = {
+                                            'PMR - Recebimento': 'advanced_indicators.PMR', 
+                                            'PME - Estocagem': 'advanced_indicators.PME', 
+                                            'PMP - Pagamento': 'advanced_indicators.PMP', 
+                                            'Ciclo Financeiro': 'advanced_indicators.Ciclo_Financeiro'
+                                        } %}
+                                        
+                                        {% for name, key in cycle_indicators.items() %}
+                                        <tr class="{{ 'bg-gray-50 font-bold' if 'Ciclo' in name else '' }}">
+                                            <td class="tooltip">
+                                                {{ name }}
+                                                {% if 'PMR' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>PMR - Prazo Médio de Recebimento:</strong><br><br>
+                                                        É como quando você vende um brinquedo para um amigo e ele promete te pagar depois. O PMR é quantos dias você demora para receber esse dinheiro.
+                                                    </span>
+                                                {% elif 'PME' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>PME - Prazo Médio de Estocagem:</strong><br><br>
+                                                        É quanto tempo os produtos ficam guardados antes de serem vendidos. Como os brinquedos que ficam na prateleira da loja esperando alguém comprar.
+                                                    </span>
+                                                {% elif 'PMP' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>PMP - Prazo Médio de Pagamento:</strong><br><br>
+                                                        É quanto tempo a empresa demora para pagar quem vendeu produtos para ela. Como quando você compra algo e pede para pagar depois.
+                                                    </span>
+                                                {% elif 'Ciclo' in name %}
+                                                    <span class="tooltiptext">
+                                                        <strong>Ciclo Financeiro:</strong><br><br>
+                                                        É por quantos dias a empresa fica "sem dinheiro" esperando receber das vendas. Quanto menor, melhor para a empresa!
+                                                    </span>
+                                                {% endif %}
+                                            </td>
+                                            {% for res in results.yearly_results %}
+                                            <td class="text-center">
+                                                {% if 'PMR' in name %}
+                                                    {% if res.advanced_indicators.PMR is not none %}
+                                                        {{ "%.0f"|format(res.advanced_indicators.PMR) }}
+                                                    {% else %}
+                                                        N/A
+                                                    {% endif %}
+                                                {% elif 'PME' in name %}
+                                                    {% if res.advanced_indicators.PME is not none %}
+                                                        {{ "%.0f"|format(res.advanced_indicators.PME) }}
+                                                    {% else %}
+                                                        N/A
+                                                    {% endif %}
+                                                {% elif 'PMP' in name %}
+                                                    {% if res.advanced_indicators.PMP is not none %}
+                                                        {{ "%.0f"|format(res.advanced_indicators.PMP) }}
+                                                    {% else %}
+                                                        N/A
+                                                    {% endif %}
+                                                {% elif 'Ciclo' in name %}
+                                                    {% if res.advanced_indicators.Ciclo_Financeiro is not none %}
+                                                        {{ "%.0f"|format(res.advanced_indicators.Ciclo_Financeiro) }}
+                                                    {% else %}
+                                                        N/A
+                                                    {% endif %}
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
+                                            {% endfor %}
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const chartData = JSON.parse('{{ chart_data_json | safe }}');
+                        
+                        if (chartData && chartData.labels && chartData.labels.length > 0) {
+                            const ctx = document.getElementById('tesouraChart').getContext('2d');
+                            new Chart(ctx, {
+                                type: 'line',
+                                data: {
+                                    labels: chartData.labels,
+                                    datasets: [
+                                        {
+                                            label: 'NCG (Necessidade de Capital de Giro)',
+                                            data: chartData.ncg,
+                                            borderColor: '#3b82f6',
+                                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                            borderWidth: 4,
+                                            fill: false,
+                                            tension: 0.1,
+                                            pointBackgroundColor: '#3b82f6',
+                                            pointBorderColor: '#ffffff',
+                                            pointBorderWidth: 2,
+                                            pointRadius: 6,
+                                            pointHoverRadius: 8
+                                        },
+                                        {
+                                            label: 'CDG (Capital de Giro)',
+                                            data: chartData.cdg,
+                                            borderColor: '#10b981',
+                                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                            borderWidth: 4,
+                                            fill: false,
+                                            tension: 0.1,
+                                            pointBackgroundColor: '#10b981',
+                                            pointBorderColor: '#ffffff',
+                                            pointBorderWidth: 2,
+                                            pointRadius: 6,
+                                            pointHoverRadius: 8
+                                        },
+                                        {
+                                            label: 'Tesouraria (T)',
+                                            data: chartData.t,
+                                            borderColor: '#8b5cf6',
+                                            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                                            borderWidth: 3,
+                                            borderDash: [5, 5],
+                                            fill: false,
+                                            tension: 0.1,
+                                            pointBackgroundColor: '#8b5cf6',
+                                            pointBorderColor: '#ffffff',
+                                            pointBorderWidth: 2,
+                                            pointRadius: 5,
+                                            pointHoverRadius: 7
+                                        }
+                                    ]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                        title: {
+                                            display: true,
+                                            text: 'Evolução dos Indicadores Fleuriet (R$ Milhões)',
+                                            font: {
+                                                size: 16,
+                                                weight: 'bold'
+                                            },
+                                            color: '#1f2937'
+                                        },
+                                        legend: {
+                                            position: 'top',
+                                            labels: {
+                                                usePointStyle: true,
+                                                padding: 20,
+                                                font: {
+                                                    size: 12,
+                                                    weight: '500'
+                                                }
+                                            }
+                                        },
+                                        tooltip: {
+                                            mode: 'index',
+                                            intersect: false,
+                                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                            titleColor: '#ffffff',
+                                            bodyColor: '#ffffff',
+                                            borderColor: '#4f46e5',
+                                            borderWidth: 1,
+                                            cornerRadius: 8,
+                                            callbacks: {
+                                                label: function(context) {
+                                                    let label = context.dataset.label || '';
+                                                    if (label) {
+                                                        label += ': ';
+                                                    }
+                                                    if (context.parsed.y !== null) {
+                                                        label += new Intl.NumberFormat('pt-BR', { 
+                                                            style: 'currency', 
+                                                            currency: 'BRL',
+                                                            minimumFractionDigits: 0,
+                                                            maximumFractionDigits: 0
+                                                        }).format(context.parsed.y);
+                                                    }
+                                                    return label;
+                                                }
+                                            }
+                                        }
+                                    },
+                                    scales: {
+                                        x: {
+                                            title: {
+                                                display: true,
+                                                text: 'Ano',
+                                                font: {
+                                                    size: 14,
+                                                    weight: '600'
+                                                },
+                                                color: '#374151'
+                                            },
+                                            grid: {
+                                                color: 'rgba(0, 0, 0, 0.05)'
+                                            }
+                                        },
+                                        y: {
+                                            title: {
+                                                display: true,
+                                                text: 'Valor (R$)',
+                                                font: {
+                                                    size: 14,
+                                                    weight: '600'
+                                                },
+                                                color: '#374151'
+                                            },
+                                            grid: {
+                                                color: 'rgba(0, 0, 0, 0.1)'
+                                            },
+                                            ticks: {
+                                                callback: function(value) {
+                                                    if (value === null || value === undefined) return '';
+                                                    if (Math.abs(value) >= 1.0e+9) {
+                                                        return 'R$ ' + (value / 1.0e+9).toFixed(1) + 'B';
+                                                    } else if (Math.abs(value) >= 1.0e+6) {
+                                                        return 'R$ ' + (value / 1.0e+6).toFixed(1) + 'M';
+                                                    } else if (Math.abs(value) >= 1.0e+3) {
+                                                        return 'R$ ' + (value / 1.0e+3).toFixed(1) + 'k';
+                                                    }
+                                                    return 'R$ ' + value;
+                                                }
+                                            }
+                                        }
+                                    },
+                                    interaction: {
+                                        mode: 'nearest',
+                                        axis: 'x',
+                                        intersect: false
+                                    }
+                                }
+                            });
+                        } else {
+                            document.getElementById('tesouraChart').innerHTML = `
+                                <div class="flex items-center justify-center h-full text-gray-500">
+                                    <p>Dados insuficientes para exibir o gráfico</p>
+                                </div>
+                            `;
+                        }
+                    });
+                </script>
+
+            {% endif %}
