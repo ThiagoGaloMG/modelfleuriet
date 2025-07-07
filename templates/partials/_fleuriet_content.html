@@ -1,9 +1,8 @@
 <!-- 
   Este é o conteúdo da aba "Saúde Financeira (Fleuriet)".
-  Ele é renderizado quando os dados do fleuriet_results estão disponíveis.
+  As variáveis (ex: fleuriet_results) são passadas a partir do index.html principal.
 -->
-
-{% if fleuriet_results and fleuriet_results.yearly_results %}
+<div class="space-y-8">
     <!-- Cards de Métricas Principais -->
     {% set latest = fleuriet_results.yearly_results[-1] %}
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -27,7 +26,7 @@
             </div>
             <div class="text-sm text-gray-600 mb-1">Z-Score de Prado</div>
             <div class="text-xs font-semibold">
-                {% if latest.advanced_indicators.Z_Risk and 'N/A' not in latest.advanced_indicators.Z_Risk %}{{ latest.advanced_indicators.Z_Risk }}{% else %}N/A{% endif %}
+                {% if latest.advanced_indicators.Z_Risk and 'N/A' not in latest.advanced_indicators.Z_Risk and 'impossível' not in latest.advanced_indicators.Z_Risk|string and 'insuficientes' not in latest.advanced_indicators.Z_Risk|string %}{{ latest.advanced_indicators.Z_Risk }}{% else %}N/A{% endif %}
             </div>
         </div>
     </div>
@@ -64,11 +63,11 @@
                         } %}
                         {% for name, (key, type) in indicators.items() %}
                         <tr>
-                            <td class="px-4 py-3">{{ name }}</td>
+                            <td class="px-4 py-3 font-medium">{{ name }}</td>
                             {% for res in fleuriet_results.yearly_results %}
                                 <td class="px-4 py-3 text-center">
                                     {% set val = res[key.split('.')[0]][key.split('.')[1]] if '.' in key else res[key] %}
-                                    {% if val is not none and val != 'N/A' and val != 'Cálculo impossível' and val != 'Dados insuficientes' %}
+                                    {% if val is not none and val != 'N/A' and 'impossível' not in val|string and 'insuficientes' not in val|string %}
                                         {% if type == 'currency' %}R$ {{ "{:,.0f}".format(val / 1000) }}{% elif type == 'percent' %}{{ "%.2f"|format(val) }}%{% elif type == 'float' %}{{ "%.4f"|format(val) }}{% else %}{{ val }}{% endif %}
                                     {% else %}N/A{% endif %}
                                 </td>
@@ -96,7 +95,7 @@
                             {% set cycle_indicators = {'PMR': 'PMR', 'PME': 'PME', 'PMP': 'PMP', 'Ciclo Financeiro': 'Ciclo_Financeiro'} %}
                             {% for name, key in cycle_indicators.items() %}
                             <tr>
-                                <td class="px-4 py-3">{{ name }}</td>
+                                <td class="px-4 py-3 font-medium">{{ name }}</td>
                                 {% for res in fleuriet_results.yearly_results %}
                                 <td class="px-4 py-3 text-center">
                                     {% set val = res.advanced_indicators[key] %}
@@ -116,8 +115,5 @@
             {% endif %}
         </div>
     </div>
-{% else %}
-    <div class="glass-card p-6 text-center">
-        <p class="text-gray-600">Nenhum dado do Fleuriet disponível para exibir.</p>
-    </div>
+</div>
 {% endif %}
