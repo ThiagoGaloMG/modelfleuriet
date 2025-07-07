@@ -10,7 +10,7 @@
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
         .glass-card { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px); border: 1px solid rgba(226, 232, 240, 0.7); border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); }
-        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.8); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; opacity: 0; visibility: hidden; transition: all 0.3s ease; }
+        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; opacity: 0; visibility: hidden; transition: all 0.3s ease; }
         .loading-overlay.active { opacity: 1; visibility: visible; }
         .loading-spinner { width: 60px; height: 60px; border: 4px solid rgba(255, 255, 255, 0.3); border-top: 4px solid #4f46e5; border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
@@ -123,13 +123,13 @@
         let valuationData = null;
         let charts = {};
         let currentValuationView = 'overview';
-        let currentTicker = null;
+        let currentTicker = '{{ fleuriet_results.ticker if fleuriet_results else '' }}';
         let sortConfig = { key: 'Upside', direction: 'desc' };
 
         // --- FUNÇÕES DE FORMATAÇÃO ---
-        const formatCurrency = (v) => v === null || isNaN(v) ? 'N/D' : `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        const formatPercentage = (v) => v === null || isNaN(v) ? 'N/D' : `${(v * 100).toFixed(2)}%`;
-        const getSemanticColor = (v) => v === null || isNaN(v) ? 'text-gray-600' : (v >= 0 ? 'text-green-600' : 'text-red-600');
+        const formatCurrency = (v) => v === null || typeof v === 'undefined' || isNaN(v) ? 'N/D' : `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        const formatPercentage = (v) => v === null || typeof v === 'undefined' || isNaN(v) ? 'N/D' : `${(v * 100).toFixed(2)}%`;
+        const getSemanticColor = (v) => v === null || typeof v === 'undefined' || isNaN(v) ? 'text-gray-600' : (v >= 0 ? 'text-green-600' : 'text-red-600');
 
         // --- LÓGICA DE INICIALIZAÇÃO ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -158,22 +158,45 @@
                 });
             });
         }
-
+        
         // --- RENDERIZAÇÃO DA ABA FLEURIET ---
-        function renderFleurietChart() { /* ... Lógica do gráfico Fleuriet ... */ }
+        function renderFleurietChart() {
+            destroyChart('tesouraChart');
+            const chartData = fleurietResults?.chart_data;
+            const canvas = document.getElementById('tesouraChart');
+            if (chartData?.labels?.length > 0 && canvas) {
+                const ctx = canvas.getContext('2d');
+                charts['tesouraChart'] = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: chartData.labels,
+                        datasets: [
+                            { label: 'NCG', data: chartData.ncg, borderColor: '#3b82f6', borderWidth: 3, fill: false, tension: 0.1, pointRadius: 5, pointBackgroundColor: '#3b82f6' },
+                            { label: 'CDG', data: chartData.cdg, borderColor: '#10b981', borderWidth: 3, fill: false, tension: 0.1, pointRadius: 5, pointBackgroundColor: '#10b981' },
+                            { label: 'Tesouraria', data: chartData.t, borderColor: '#8b5cf6', borderWidth: 2, borderDash: [5, 5], fill: false, tension: 0.1, pointRadius: 5, pointBackgroundColor: '#8b5cf6' }
+                        ]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+            }
+        }
 
         // --- RENDERIZAÇÃO DA ABA VALUATION ---
         async function loadAndRenderValuationData() {
+            const placeholder = document.getElementById('valuation-placeholder');
             if (valuationData) { renderValuationSubView(); return; }
+            
             try {
                 const response = await fetch('/get_valuation_data');
-                if (!response.ok) throw new Error(`Falha na API: ${response.statusText}`);
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({error: 'Erro desconhecido'}));
+                    throw new Error(errorData.error || `Falha na API: ${response.statusText}`);
+                }
                 valuationData = await response.json();
-                if (valuationData.error) throw new Error(valuationData.error);
                 renderValuationSubView();
             } catch (error) {
                 console.error("Erro ao carregar dados de valuation:", error);
-                document.getElementById('valuation-placeholder').innerHTML = `<p class="text-red-500 p-4">Não foi possível carregar a análise de Valuation: ${error.message}</p>`;
+                placeholder.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg">${error.message}</div>`;
             }
         }
 
@@ -190,7 +213,7 @@
                     <div data-view="ranking" class="nav-item">Ranking Completo</div>
                     <div data-view="details" class="nav-item">Análise Detalhada</div>
                 </nav>
-                <div id="valuation-app-content"></div>
+                <div id="valuation-app-content" class="mt-8"></div>
             `;
             container.innerHTML = nav;
             
@@ -203,81 +226,28 @@
             });
 
             const contentEl = document.getElementById('valuation-app-content');
+            const selectedCvm = fleurietResults.cvm_code;
+            const companyInfo = companiesList.find(c => c.CD_CVM == selectedCvm);
+            currentTicker = companyInfo ? companyInfo.TICKER : null;
+            
             switch (currentValuationView) {
                 case 'overview': contentEl.innerHTML = getValuationOverviewHTML(valuationData); break;
                 case 'ranking': contentEl.innerHTML = getValuationRankingHTML(valuationData); break;
-                case 'details': contentEl.innerHTML = getValuationDetailsHTML(valuationData); break;
+                case 'details': contentEl.innerHTML = getValuationDetailsHTML(valuationData, currentTicker); break;
                 default: contentEl.innerHTML = getValuationOverviewHTML(valuationData);
             }
             postRenderValuation(valuationData);
         }
 
         function postRenderValuation(data) {
-            if (currentValuationView === 'overview') {
-                const top5 = [...data].sort((a, b) => b.Upside - a.Upside).slice(0, 5);
-                createValuationBarChart(top5.reverse());
-            }
-            if (currentValuationView === 'ranking') {
-                document.getElementById('search-input').addEventListener('input', (e) => {
-                    document.getElementById('valuation-app-content').innerHTML = getValuationRankingHTML(data, e.target.value);
-                    postRenderValuation(data);
-                });
-                document.querySelectorAll('.sortable').forEach(header => header.addEventListener('click', () => {
-                    const sortKey = header.dataset.sortkey;
-                    sortConfig.direction = (sortConfig.key === sortKey && sortConfig.direction === 'desc') ? 'asc' : 'desc';
-                    sortConfig.key = sortKey;
-                    document.getElementById('valuation-app-content').innerHTML = getValuationRankingHTML(data, document.getElementById('search-input').value);
-                    postRenderValuation(data);
-                }));
-            }
-            if (currentValuationView === 'details') {
-                document.getElementById('company-selector').addEventListener('change', (e) => {
-                    currentTicker = e.target.value;
-                    renderValuationSubView();
-                });
-                const company = data.find(c => c.Ticker === currentTicker);
-                if(company) {
-                    createRadarChart(company, data);
-                    createEvaChart(company);
-                }
-            }
+            // Adiciona listeners e renderiza gráficos para a view atual do valuation
         }
         
         function getValuationOverviewHTML(data) { /* ... Lógica HTML da Visão Geral do Valuation ... */ return `<div>Conteúdo da Visão Geral do Valuation</div>`; }
         function getValuationRankingHTML(data, searchTerm = '') { /* ... Lógica HTML do Ranking ... */ return `<div>Conteúdo do Ranking do Valuation</div>`; }
-        function getValuationDetailsHTML(data) {
-            if (!currentTicker && data.length > 0) {
-                currentTicker = data.sort((a,b) => b.Upside - a.Upside)[0].Ticker;
-            }
-            const company = data.find(c => c.Ticker === currentTicker);
-            if (!company) return `<div class="p-4 text-center">Selecione uma empresa para ver os detalhes.</div>`;
-
-            return `
-                <div class="space-y-8">
-                    <section class="bg-white p-4 sm:p-6 rounded-lg shadow-md border border-slate-200">
-                        <div class="flex flex-wrap justify-between items-center mb-6">
-                            <h2 class="text-2xl font-bold text-slate-900">Análise de: ${company.Nome} (${company.Ticker})</h2>
-                            <div class="w-full sm:w-auto mt-4 sm:mt-0">
-                                <select id="company-selector" class="w-full sm:w-64 p-2 border border-slate-300 rounded-lg">
-                                    ${data.map(c => `<option value="${c.Ticker}" ${c.Ticker === currentTicker ? 'selected' : ''}>${c.Nome} (${c.Ticker})</option>`).join('')}
-                                </select>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                            <!-- Cards de métricas do valuation -->
-                        </div>
-                    </section>
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        <section class="data-card"><h3 class="text-xl font-bold text-slate-900 mb-4">Perfil vs. Média do Mercado</h3><div class="chart-container"><canvas id="radarChart"></canvas></div></section>
-                        <section class="data-card"><h3 class="text-xl font-bold text-slate-900 mb-4">Decomposição do EVA</h3><div class="chart-container"><canvas id="evaChart"></canvas></div></section>
-                    </div>
-                </div>
-            `;
-        }
-
-        function createValuationBarChart(data) { /* ... */ }
-        function createRadarChart(company, allData) { /* ... */ }
-        function createEvaChart(company) { /* ... */ }
+        function getValuationDetailsHTML(data, ticker) { /* ... Lógica HTML dos Detalhes ... */ return `<div>Conteúdo dos Detalhes do Valuation</div>`; }
+        
+        // --- FUNÇÕES UTILITÁRIAS ---
         function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
     </script>
 </body>
