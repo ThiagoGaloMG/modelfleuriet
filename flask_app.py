@@ -79,7 +79,10 @@ def index():
         if request.method == 'GET':
             return render_template('index.html', companies=companies_list)
 
-        cvm_code = int(request.form.get('cvm_code'))
+        cvm_code = request.form.get('cvm_code')
+        if not cvm_code:
+            return render_template('index.html', companies=companies_list, error="Por favor, selecione uma empresa antes de enviar o formulário.")
+        cvm_code = int(cvm_code)
         start_year = int(request.form.get('start_year'))
         end_year = int(request.form.get('end_year'))
         years_to_analyze = list(range(start_year, end_year + 1))
@@ -128,4 +131,4 @@ def page_not_found(e): return render_template('404.html'), 404
 def internal_server_error(e): return render_template('500.html'), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
