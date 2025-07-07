@@ -87,25 +87,25 @@
 
                     <div class="bg-white/80 backdrop-blur-sm rounded-lg shadow-md p-2 sticky top-4 z-50">
                         <nav id="analysis-tabs" class="flex justify-center flex-wrap gap-2 sm:gap-4">
-                            <button data-tab="fleuriet" class="tab-item active">Saúde Financeira (Fleuriet)</button>
-                            <button data-tab="valuation" class="tab-item">Valuation e Ranking</button>
-                        </nav>
-                    </div>
-
-                    <div id="tab-content">
-                        <div id="fleuriet-content" class="tab-pane active">
-                            {% include 'partials/_fleuriet_content.html' %}
-                        </div>
-                        <div id="valuation-content" class="tab-pane">
-                            <div id="valuation-placeholder" class="text-center p-8 glass-card">
-                                <div class="loading-spinner mx-auto"></div>
-                                <p class="text-gray-600 mt-4">Carregando análise de Valuation...</p>
+                            <button data-tab="fleuriet" class="tab-item active">Saúde Financeira (F                        <div class="tab-pane" id="valuation-tab">
+                            <div class="data-card">
+                                <div class="flex items-center justify-between mb-6">
+                                    <h3 class="text-xl font-bold text-gray-800">Ranking de Valuation</h3>
+                                    <div class="flex items-center space-x-4">
+                                        <button id="refreshValuationBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
+                                            Atualizar Dados
+                                        </button>
+                                        <div class="text-sm text-gray-500">Atualizado automaticamente</div>
+                                    </div>
+                                </div>
+                                <div id="valuationContent">
+                                    <div class="text-center py-8">
+                                        <div class="loading-spinner mx-auto mb-4"></div>
+                                        <p class="text-gray-600">Carregando dados de valuation...</p>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                </div>
-            {% elif error %}
-                <div class="glass-card p-6 text-center border-2 border-red-200">
+                        </div>ass="glass-card p-6 text-center border-2 border-red-200">
                     <h3 class="text-xl font-bold text-red-700">Erro na Análise</h3>
                     <p class="text-red-600 mt-2">{{ error }}</p>
                 </div>
@@ -136,13 +136,18 @@
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('analysisForm').addEventListener('submit', () => {
                 document.getElementById('loadingOverlay').classList.add('active');
-                document.getElementById('loadingText').innerText = 'Analisando...';
-            });
-
+        // --- INICIALIZAÇÃO ---
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeTabs();
             if (fleurietResults) {
-                setupTabs();
                 renderFleurietChart();
                 loadAndRenderValuationData();
+            }
+            
+            // Event listener para o botão de atualizar dados
+            const refreshBtn = document.getElementById('refreshValuationBtn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', runValuationWorker);
             }
         });
 
@@ -184,7 +189,7 @@
 
         // --- RENDERIZAÇÃO DA ABA VALUATION ---
         async function loadAndRenderValuationData() {
-            const placeholder = document.getElementById('valuation-placeholder');
+            const placeholder = document.getElementById('valuationContent');
             if (valuationData) { renderValuationSubView(); return; }
             
             try {
@@ -198,6 +203,41 @@
             } catch (error) {
                 console.error("Erro ao carregar dados de valuation:", error);
                 placeholder.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg">${error.message}</div>`;
+            }
+        }
+
+        // Função para executar o worker manualmente
+        async function runValuationWorker() {
+            const btn = document.getElementById('refreshValuationBtn');
+            const originalText = btn.textContent;
+            
+            try {
+                btn.textContent = 'Processando...';
+                btn.disabled = true;
+                
+                const response = await fetch('/run_valuation_worker', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Recarrega os dados após executar o worker
+                    valuationData = null;
+                    await loadAndRenderValuationData();
+                    alert('Dados de valuation atualizados com sucesso!');
+                } else {
+                    throw new Error(result.error || 'Erro desconhecido');
+                }
+            } catch (error) {
+                console.error('Erro ao executar worker:', error);
+                alert('Erro ao atualizar dados: ' + error.message);
+            } finally {
+                btn.textContent = originalText;
+                btn.disabled = false;
             }
         }
 
