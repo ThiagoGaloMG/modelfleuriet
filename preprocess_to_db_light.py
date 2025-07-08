@@ -216,30 +216,27 @@ class ETLPipeline:
         logger.info(f"✅ {year} processado em {elapsed:.2f}s")
 
     def _insert_data(self, df: pd.DataFrame):
-        try:
-            logger.info(f"Inserindo {len(df)} registros...")
-            
-            chunks = [df[i:i+Config.CHUNK_SIZE] for i in range(0, len(df), Config.CHUNK_SIZE)]
-            
-            for i, chunk in enumerate(chunks):
-                chunk.to_sql(
-                    name=Config.TABLE_NAME,
-                    con=self.db.engine,
-                    if_exists='append',
-                    index=False,
-                    method='multi',
-                    chunksize=1000
-                )
-                logger.info(f"Lote {i+1}/{len(chunks)} inserido.")
-                del chunk
-                gc.collect()
-                
-            logger.info("✅ Dados inseridos com sucesso.")
-        except IntegrityError:
-            logger.warning("Dados duplicados. Pulando inserção.")
-        except SQLAlchemyError as e:
-            logger.error(f"❌ Falha na inserção: {e}", exc_info=True)
-            raise
+    try:
+        logger.info(f"Inserindo {len(df)} registros...")
+        
+        # Limpa dados existentes para o ano atual (opcional)
+        with self.db.engine.connect() as conn:
+            conn.execute(text(f'DELETE FROM {Config.TABLE_NAME} WHERE EXTRACT(YEAR FROM "DT_REFER") = {year}'))
+            conn.commit()
+        
+        # Insere novos dados
+        df.to_sql(
+            name=Config.TABLE_NAME,
+            con=self.db.engine,
+            if_exists='append',  # Mantém 'append' após a limpeza
+            index=False,
+            method='multi',
+            chunksize=1000
+        )
+        logger.info("✅ Dados inseridos com sucesso.")
+    except SQLAlchemyError as e:
+        logger.error(f"❌ Falha na inserção: {e}", exc_info=True)
+        raise
 
 def main():
     try:
