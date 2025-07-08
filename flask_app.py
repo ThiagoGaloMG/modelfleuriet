@@ -84,7 +84,7 @@ def create_db_engine():
         logger.error(f"❌ Falha ao criar a engine do banco de dados: {e}", exc_info=True)
         return None
 
-def load_ticker_mapping(file_path='data/mapeamento_tickers.csv'):
+def load_ticker_mapping(file_path='mapeamento_tickers.csv'):  # CORRIGIDO: removido 'data/'
     """Carrega o mapeamento de tickers com tratamento de erros"""
     logger.info(f"Carregando mapeamento de tickers de {file_path}...")
     try:
@@ -130,7 +130,7 @@ def get_companies_list(engine, ticker_mapping_df):
             how='left'
         )
         
-        # Corrigido: Substitui fillna inplace por assign
+        # CORRIGIDO: Substituir fillna inplace por assign
         final_df = final_df.assign(TICKER=final_df['TICKER'].fillna('S/TICKER'))
         
         logger.info(f"✅ {len(final_df)} empresas encontradas e mapeadas.")
@@ -420,18 +420,7 @@ def internal_server_error(e):
     logger.error(f"Erro interno do servidor: {e}", exc_info=True)
     return render_template('500.html'), 500
 
-def shutdown_server():
-    """Desliga o servidor Flask de forma segura"""
-    func = request.environ.get('werkzeug.server.shutdown')
-    if func is None:
-        raise RuntimeError('Não está rodando com o servidor Werkzeug')
-    func()
-
-@app.route('/shutdown', methods=['POST'])
-def shutdown():
-    """Endpoint para desligar o servidor (apenas para desenvolvimento)"""
-    shutdown_server()
-    return 'Servidor desligando...'
+# REMOVIDO: endpoint de shutdown (não deve estar em produção)
 
 if __name__ == '__main__':
     try:
