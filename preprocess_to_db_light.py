@@ -125,6 +125,8 @@ class DataProcessor:
         for col in date_cols:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
+                # Substituir NaT por None (que será NULL no banco)
+                df[col] = df[col].apply(lambda x: None if pd.isna(x) else x)
         
         # Converter colunas numéricas
         numeric_cols = ['VL_CONTA', 'CD_CVM', 'VERSAO']
@@ -232,7 +234,18 @@ class ETLPipeline:
             logger.info(f"Preparando {len(df)} registros para upsert do ano {year}...")
             
             # Converter DataFrame para lista de dicionários
-            data = df.to_dict('records')
+            # Substituir NaN/NaT por None explicitamente
+            data = []
+            for _, row in df.iterrows():
+                row_dict = {}
+                for col in df.columns:
+                    value = row[col]
+                    # Verificar se é um valor nulo do pandas
+                    if pd.isna(value):
+                        row_dict[col] = None
+                    else:
+                        row_dict[col] = value
+                data.append(row_dict)
             
             # Query de UPSERT otimizada
             upsert_query = """
