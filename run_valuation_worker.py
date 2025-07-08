@@ -36,11 +36,11 @@ def get_db_engine():
         logger.error("DATABASE_URL não definida.")
         raise ValueError("DATABASE_URL não definida.")
 
+    # Corrige a string de conexão para o formato adequado
     database_url = database_url.strip()
-    if " " in database_url:
-        database_url = database_url.split(" ")[0]
-    
-    if database_url.startswith("postgresql://") and "postgresql+psycopg2://" not in database_url:
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif database_url.startswith("postgresql://") and "+psycopg2" not in database_url:
         database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
     
     try:
@@ -104,6 +104,8 @@ def create_valuation_table(engine):
             "EVA" NUMERIC,
             "Capital_Empregado" NUMERIC, 
             "NOPAT" NUMERIC,
+            "Beta" NUMERIC,
+            "Data_Calculo" DATE,
             "Data_Atualizacao" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """)
@@ -153,13 +155,6 @@ def load_financial_data(engine):
     for attempt in range(MAX_RETRIES):
         try:
             with engine.connect() as conn:
-                # Verifique se há dados primeiro
-                count = conn.execute(text('SELECT COUNT(*) FROM financial_data')).scalar()
-                logger.info(f"Total de registros na tabela: {count}")
-                
-                if count == 0:
-                    return pd.DataFrame()
-                
                 # Carrega os dados
                 df = pd.read_sql(
                     query,
@@ -207,13 +202,6 @@ def main():
         start_time = datetime.now()
         db_engine = get_db_engine()
         log_memory_usage()
-
-        # VERIFICAÇÃO ADICIONADA
-        with db_engine.connect() as conn:
-            db_url = conn.engine.url
-            logger.info(f"Conectado ao banco: {db_url.host}/{db_url.database}")
-            tables = inspect(db_engine).get_table_names()
-            logger.info(f"Tabelas disponíveis: {tables}")
 
         # Prepara tabela
         create_valuation_table(db_engine)
