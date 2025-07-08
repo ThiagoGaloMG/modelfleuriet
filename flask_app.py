@@ -11,6 +11,7 @@ import logging
 from dotenv import load_dotenv
 import gc
 import psutil
+from pathlib import Path
 
 load_dotenv()
 app = Flask(__name__)
@@ -56,11 +57,8 @@ def create_db_engine():
     database_url = database_url.strip()
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
-    elif database_url.startswith("postgresql://") and "+psycopg2" not in database_url:
-        database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
     
-    # Remove espaços e parâmetros extras
-    database_url = database_url.split(" ")[0].split("?")[0]
+    logger.info(f"Conectando ao banco: {database_url.split('@')[-1]}")
     
     try:
         engine = create_engine(
@@ -70,7 +68,7 @@ def create_db_engine():
             max_overflow=10,
             pool_recycle=3600,
             connect_args={
-                "connect_timeout": 10,
+                "connect_timeout": 30,
                 "keepalives": 1,
                 "keepalives_idle": 30,
                 "keepalives_interval": 10,
@@ -80,16 +78,30 @@ def create_db_engine():
         # Testa a conexão
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        logger.info("✅ Conexão com o banco de dados estabelecida.")
+            logger.info("✅ Conexão com o banco de dados estabelecida.")
+            
+            # Verifica se a tabela financial_data existe
+            inspector = inspect(engine)
+            if not inspector.has_table('financial_data'):
+                logger.error("❌ Tabela 'financial_data' não encontrada no banco")
+            
         return engine
     except Exception as e:
-        logger.error(f"❌ Falha ao criar a engine do banco de dados: {e}", exc_info=True)
+        logger.error(f"❌ Falha ao conectar ao banco: {e}", exc_info=True)
         return None
 
-def load_ticker_mapping(file_path='mapeamento_tickers.csv'):
+def load_ticker_mapping(file_path=None):
     """Carrega o mapeamento de tickers com tratamento de erros"""
+    if file_path is None:
+        file_path = os.path.join(os.path.dirname(__file__), 'mapeamento_tickers.csv')
+    
     logger.info(f"Carregando mapeamento de tickers de {file_path}...")
     try:
+        # Verifica se o arquivo existe
+        if not os.path.exists(file_path):
+            logger.error(f"Arquivo não encontrado: {file_path}")
+            return pd.DataFrame()
+        
         df_tickers = pd.read_csv(
             file_path, 
             sep=',',
@@ -107,7 +119,7 @@ def load_ticker_mapping(file_path='mapeamento_tickers.csv'):
         df_tickers = df_tickers.drop_duplicates(subset=['CD_CVM'], keep='first')
         
         logger.info(f"✅ {len(df_tickers)} mapeamentos carregados.")
-        return df_tickers[['CD_CVM', 'TICKER']]
+        return df_tickers[['CD_CVM', 'TICKER', 'NOME_EMPRESA']]
     except Exception as e:
         logger.error(f"❌ Erro ao carregar mapeamento: {e}", exc_info=True)
         return pd.DataFrame()
@@ -115,6 +127,7 @@ def load_ticker_mapping(file_path='mapeamento_tickers.csv'):
 def get_companies_list(engine, ticker_mapping_df):
     """Obtém lista de empresas com tratamento de erros"""
     if engine is None: 
+        logger.error("Engine do banco não disponível")
         return []
     
     logger.info("Buscando lista de empresas do banco...")
@@ -122,6 +135,8 @@ def get_companies_list(engine, ticker_mapping_df):
         with engine.connect() as connection:
             query = text('SELECT DISTINCT "DENOM_CIA", "CD_CVM" FROM financial_data ORDER BY "DENOM_CIA"')
             df_companies_db = pd.read_sql(query, connection)
+        
+        logger.info(f"Empresas encontradas no banco: {len(df_companies_db)}")
         
         # Renomeia colunas e faz merge com tickers
         df_companies_db = df_companies_db.rename(columns={'DENOM_CIA': 'NOME_EMPRESA'})
@@ -132,8 +147,14 @@ def get_companies_list(engine, ticker_mapping_df):
             how='left'
         )
         
-        # Preenche tickers faltantes
-        final_df['TICKER'] = final_df['TICKER'].fillna('S/TICKER')
+        # Se não houver correspondência no merge, usa os dados do CSV
+        final_df['TICKER'] = final_df['TICKER'].fillna(final_df['NOME_EMPRESA'])
+        final_df['NOME_EMPRESA'] = final_df['NOME_EMPRESA'].fillna(final_df['NOME_EMPRESA_y'])
+        
+        logger.info(f"Empresas após merge: {len(final_df)}")
+        
+        # Remove colunas desnecessárias e duplicatas
+        final_df = final_df[['CD_CVM', 'TICKER', 'NOME_EMPRESA']].drop_duplicates()
         
         logger.info(f"✅ {len(final_df)} empresas encontradas e mapeadas.")
         return final_df.to_dict(orient='records')
@@ -150,52 +171,10 @@ def ensure_valuation_table_exists(engine):
     try:
         inspector = inspect(engine)
         
-        # Verifica se a tabela existe e tem a estrutura correta
         if inspector.has_table('valuation_results'):
-            logger.info("Tabela 'valuation_results' existe. Verificando estrutura...")
+            logger.info("Tabela 'valuation_results' existe.")
+            return True
             
-            # Lista de colunas obrigatórias com seus tipos esperados
-            required_columns = {
-                'ticker': 'varchar',
-                'nome': 'varchar',
-                'upside': 'numeric',
-                'roic': 'numeric',
-                'wacc': 'numeric',
-                'spread': 'numeric',
-                'preco_atual': 'numeric',
-                'preco_justo': 'numeric',
-                'market_cap': 'int8',  # bigint
-                'eva': 'numeric',
-                'capital_empregado': 'numeric',
-                'nopat': 'numeric',
-                'beta': 'numeric',
-                'data_calculo': 'date',
-                'data_atualizacao': 'timestamp'
-            }
-            
-            # Obtém os metadados das colunas existentes
-            existing_columns = {}
-            for column in inspector.get_columns('valuation_results'):
-                existing_columns[column['name'].lower()] = column['type'].__visit_name__.lower()
-            
-            # Verifica se todas as colunas necessárias existem com os tipos corretos
-            missing_or_invalid = False
-            for col, expected_type in required_columns.items():
-                if col not in existing_columns:
-                    logger.warning(f"Coluna faltando: {col} (esperado: {expected_type})")
-                    missing_or_invalid = True
-                elif existing_columns[col] != expected_type:
-                    logger.warning(f"Tipo incorreto para {col}: {existing_columns[col]} (esperado: {expected_type})")
-                    missing_or_invalid = True
-            
-            if not missing_or_invalid:
-                logger.info("✅ Estrutura da tabela está correta")
-                return True
-            
-            logger.warning("Estrutura da tabela incompatível. Recriando...")
-            with engine.begin() as conn:
-                conn.execute(text("DROP TABLE IF EXISTS valuation_results"))
-                
         logger.info("Criando tabela 'valuation_results'...")
         create_query = text("""
             CREATE TABLE valuation_results (
@@ -241,17 +220,20 @@ def run_valuation_worker_if_needed(engine):
             logger.info("Tabela valuation_results está vazia. Executando worker...")
             from core.valuation_analysis import run_full_valuation_analysis
             
-            # Carrega dados necessários com otimização de memória
+            # Carrega dados necessários
             df_tickers = load_ticker_mapping()
+            if df_tickers.empty:
+                logger.error("Nenhum ticker carregado")
+                return
+                
             with engine.connect() as connection:
-                # Carrega apenas colunas necessárias
                 cols = ["CD_CVM", "CD_CONTA", "VL_CONTA", "DT_REFER", "DENOM_CIA"]
                 df_full_data = pd.read_sql(
-                    f'SELECT {",".join(cols)} FROM financial_data',
+                    text(f'SELECT {",".join(cols)} FROM financial_data'),
                     connection
                 )
             
-            if not df_full_data.empty and not df_tickers.empty:
+            if not df_full_data.empty:
                 valuation_results = run_full_valuation_analysis(df_full_data, df_tickers)
                 
                 if valuation_results:
@@ -268,7 +250,7 @@ def run_valuation_worker_if_needed(engine):
                 else:
                     logger.warning("Worker não gerou resultados.")
             else:
-                logger.warning("Dados insuficientes para executar o worker.")
+                logger.warning("Dados financeiros não encontrados.")
                 
     except Exception as e:
         logger.error(f"❌ Erro ao executar worker de valuation: {e}", exc_info=True)
@@ -279,13 +261,41 @@ try:
     df_tickers = load_ticker_mapping()
     companies_list = get_companies_list(db_engine, df_tickers) if db_engine else []
     
-    if db_engine and ensure_valuation_table_exists(db_engine):
-        run_valuation_worker_if_needed(db_engine)
+    if db_engine:
+        if not inspect(db_engine).has_table('financial_data'):
+            logger.error("TABELA FINANCIAL_DATA NÃO ENCONTRADA!")
+        
+        if ensure_valuation_table_exists(db_engine):
+            run_valuation_worker_if_needed(db_engine)
+        else:
+            logger.error("Falha ao garantir tabela de valuation.")
     else:
-        logger.error("Falha ao garantir tabela de valuation. Algumas funcionalidades podem não estar disponíveis.")
+        logger.error("Falha na conexão com o banco de dados.")
+        
 except Exception as e:
     logger.critical(f"❌ Falha na inicialização: {e}", exc_info=True)
     companies_list = []
+
+@app.route('/health')
+def health_check():
+    """Endpoint para verificação de saúde da aplicação"""
+    db_status = "active" if db_engine else "inactive"
+    tables = {
+        'financial_data': False,
+        'valuation_results': False
+    }
+    
+    if db_engine:
+        inspector = inspect(db_engine)
+        tables['financial_data'] = inspector.has_table('financial_data')
+        tables['valuation_results'] = inspector.has_table('valuation_results')
+    
+    return jsonify({
+        "status": "ok",
+        "db_connection": db_status,
+        "tables": tables,
+        "companies_count": len(companies_list)
+    })
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -367,7 +377,6 @@ def get_valuation_data():
             }), 404
         
         with db_engine.connect() as connection:
-            # Limita a 1000 registros para evitar sobrecarga
             df_valuation = pd.read_sql(
                 'SELECT * FROM valuation_results LIMIT 1000', 
                 connection
@@ -412,6 +421,24 @@ def run_valuation_worker_manual():
             "success": False, 
             "error": "Falha ao executar o worker de valuation.",
             "details": str(e)
+        }), 500
+
+@app.route('/reload_companies', methods=['GET'])
+def reload_companies():
+    """Endpoint para recarregar a lista de empresas"""
+    global companies_list
+    try:
+        db_engine = create_db_engine()
+        df_tickers = load_ticker_mapping()
+        companies_list = get_companies_list(db_engine, df_tickers) if db_engine else []
+        return jsonify({
+            "status": "success",
+            "count": len(companies_list)
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
         }), 500
 
 @app.errorhandler(404)
