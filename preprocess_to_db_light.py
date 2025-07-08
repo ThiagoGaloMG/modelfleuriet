@@ -9,62 +9,61 @@ from tqdm import tqdm
 import numpy as np
 from typing import Optional
 from dotenv import load_dotenv
-import gc  # Adicionado para gerenciamento de memória
+import gc
 
-# Carrega variáveis de ambiente de um arquivo .env, se existir (para desenvolvimento local)
+# Carrega variáveis de ambiente
 load_dotenv()
 
-# --- Configuração ---
-
 class Config:
-    """Classe de configuração para o pipeline de ETL."""
-    # Anos dos arquivos ZIP a serem processados
     VALID_YEARS = ['2022', '2023', '2024']
-    # Tamanho do lote para inserção de dados no banco
     CHUNK_SIZE = 2000
-    # Nome da tabela no banco de dados
     TABLE_NAME = 'financial_data'
 
 def setup_logging():
-    """Configura o logging para output na consola."""
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
-        handlers=[logging.StreamHandler()] # Loga para a consola, ideal para a Render
+        handlers=[logging.StreamHandler()]
     )
     return logging.getLogger(__name__)
 
 logger = setup_logging()
 
-# --- Módulos do Pipeline ---
-
 class DatabaseManager:
-    """Gerencia a conexão e as operações com o banco de dados PostgreSQL."""
     def __init__(self):
         self.engine = self._create_engine()
 
     def _create_engine(self):
-        """Cria a engine do SQLAlchemy usando a variável de ambiente DATABASE_URL."""
         database_url = os.getenv('DATABASE_URL')
         if not database_url:
-            logger.error("A variável de ambiente DATABASE_URL não foi definida.")
-            raise ValueError("A variável de ambiente DATABASE_URL não foi definida.")
+            logger.error("DATABASE_URL não definida.")
+            raise ValueError("DATABASE_URL não definida.")
         
-        # CORREÇÃO: Tratamento robusto da string de conexão
         database_url = database_url.strip()
         if " " in database_url:
             database_url = database_url.split(" ")[0]
         
-        # Garantir driver correto
         if database_url.startswith("postgresql://"):
             database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
         
         try:
-            engine = create_engine(database_url, 
-                                 pool_pre_ping=True,
-                                 pool_size=5,  # Otimização para Render
-                                 max_overflow=10)
+            engine = create_engine(
+                database_url,
+                pool_pre_ping=True,
+                pool_size=5,
+                max_overflow=10,
+                connect_args={
+                    "connect_timeout": 30,
+                    "keepalives": 1,
+                    "keepalives_idle": 30,
+                    "keepalives_interval": 10,
+                    "keepalives_count": 5
+                }
+            )
+            # Test connection
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
             logger.info("✅ Engine do banco de dados criada com sucesso.")
             return engine
         except Exception as e:
@@ -72,15 +71,19 @@ class DatabaseManager:
             raise
 
     def create_table_if_not_exists(self):
-        """Cria a tabela 'financial_data' se ela não existir."""
         inspector = inspect(self.engine)
         if inspector.has_table(Config.TABLE_NAME):
-            logger.info(f"Tabela '{Config.TABLE_NAME}' já existe. Nenhuma ação necessária.")
-            return
+            logger.info(f"Tabela '{Config.TABLE_NAME}' já existe. Recriando...")
+            try:
+                with self.engine.connect() as connection:
+                    connection.execute(text(f"DROP TABLE IF EXISTS {Config.TABLE_NAME}"))
+                    connection.commit()
+            except Exception as e:
+                logger.error(f"Erro ao dropar tabela existente: {e}")
+                raise
 
-        logger.info(f"Tabela '{Config.TABLE_NAME}' não encontrada. Criando...")
+        logger.info(f"Criando tabela '{Config.TABLE_NAME}'...")
         
-        # Query para criar a tabela com tipos de dados otimizados para PostgreSQL
         create_table_query = text(f"""
         CREATE TABLE {Config.TABLE_NAME} (
             "CNPJ_CIA" VARCHAR(20),
@@ -94,54 +97,47 @@ class DatabaseManager:
             "ORDEM_EXERC" VARCHAR(20),
             "DT_FIM_EXERC" DATE,
             "CD_CONTA" VARCHAR(50),
-            "DS_CONTA" VARCHAR(255),
+            "DS_CONTA" TEXT,
             "VL_CONTA" NUMERIC(20, 2),
             "ST_CONTA_FIXA" VARCHAR(10),
+            "DT_INI_EXERC" DATE,
+            "COLUNA_DF" VARCHAR(50),
             PRIMARY KEY ("CD_CVM", "DT_REFER", "CD_CONTA")
         );
         """)
+        
         try:
             with self.engine.connect() as connection:
-                # Adicionado DROP TABLE se existir para garantir recriação
-                connection.execute(text(f"DROP TABLE IF EXISTS {Config.TABLE_NAME}"))
                 connection.execute(create_table_query)
                 connection.commit()
             logger.info(f"✅ Tabela '{Config.TABLE_NAME}' criada com sucesso.")
         except SQLAlchemyError as e:
-            logger.error(f"❌ Falha ao criar a tabela: {e}", exc_info=True)
+            logger.error(f"❌ Falha ao criar tabela: {e}", exc_info=True)
             raise
 
 class DataProcessor:
-    """Responsável pela limpeza e transformação dos dados."""
     @staticmethod
     def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-        """Limpa e formata o DataFrame para inserção no banco."""
-        # Converte colunas de data
-        for col in ['DT_REFER', 'DT_FIM_EXERC']:
+        for col in ['DT_REFER', 'DT_FIM_EXERC', 'DT_INI_EXERC']:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
         
-        # Converte colunas numéricas
         numeric_cols = ['VL_CONTA', 'CD_CVM', 'VERSAO']
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         
-        # Remove linhas onde valores essenciais são nulos
         required_cols = ['CD_CVM', 'DT_REFER', 'CD_CONTA', 'VL_CONTA']
         df.dropna(subset=[c for c in required_cols if c in df.columns], inplace=True)
         
-        # Garante tipos de dados corretos
         if 'CD_CVM' in df.columns:
             df['CD_CVM'] = df['CD_CVM'].astype(int)
         
         return df
 
 class DataLoader:
-    """Carrega dados dos arquivos ZIP."""
     @staticmethod
     def load_from_zip(zip_path: str, year: str) -> Optional[pd.DataFrame]:
-        """Extrai e lê todos os CSVs de um arquivo ZIP para um único DataFrame."""
         if not os.path.exists(zip_path):
             logger.warning(f"Arquivo {zip_path} não encontrado.")
             return None
@@ -149,7 +145,6 @@ class DataLoader:
         try:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 all_data = []
-                # Filtra apenas pelos arquivos CSV relevantes (BPA, BPP, DRE, DFC_MD)
                 csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv') and 'con' in f]
                 
                 for csv_file in tqdm(csv_files, desc=f"Lendo arquivos de {year}"):
@@ -157,8 +152,8 @@ class DataLoader:
                         with zip_ref.open(csv_file) as f:
                             df = pd.read_csv(
                                 f, sep=';', encoding='latin1', decimal=',',
-                                low_memory=False, 
-                                dtype={'CD_CONTA': str, 'CNPJ_CIA': str}  # Otimização de tipos
+                                low_memory=False,
+                                dtype={'CD_CONTA': str, 'CNPJ_CIA': str}
                             )
                             all_data.append(df)
                     except Exception as e:
@@ -169,7 +164,6 @@ class DataLoader:
                     return None
 
                 combined_df = pd.concat(all_data, ignore_index=True)
-                # Liberar memória imediatamente após concatenação
                 del all_data
                 gc.collect()
                 return combined_df
@@ -178,60 +172,51 @@ class DataLoader:
             return None
 
 class ETLPipeline:
-    """Orquestra o processo de Extração, Transformação e Carga."""
     def __init__(self):
         self.db = DatabaseManager()
         self.processor = DataProcessor()
         self.loader = DataLoader()
 
     def run(self):
-        """Executa o pipeline completo."""
         logger.info("="*50)
         logger.info("INICIANDO PIPELINE DE CARGA DE DADOS")
         logger.info("="*50)
         
-        # 1. Garante que a tabela exista (com recriação se necessário)
         self.db.create_table_if_not_exists()
         
-        # 2. Processa os dados para cada ano configurado
         for year in Config.VALID_YEARS:
             self._process_year(year)
             
-        logger.info("PIPELINE CONCLUÍDO COM SUCESSO.")
+        logger.info("✅ PIPELINE CONCLUÍDO COM SUCESSO.")
 
     def _process_year(self, year: str):
-        """Processa os dados de um ano específico."""
         zip_file = f'dfp_cia_aberta_{year}.zip'
-        logger.info(f"===> INICIANDO PROCESSAMENTO PARA O ANO: {year} <===")
+        logger.info(f"===> PROCESSANDO ANO: {year} <===")
         start_time = time.time()
         
         raw_df = self.loader.load_from_zip(zip_file, year)
         if raw_df is None or raw_df.empty:
-            logger.error(f"Nenhum dado válido carregado para {year}. Pulando.")
+            logger.error(f"Nenhum dado válido para {year}. Pulando.")
             return
         
-        logger.info(f"Dados brutos carregados para {year}: {len(raw_df)} linhas.")
+        logger.info(f"Dados brutos carregados: {len(raw_df)} linhas.")
         
         clean_df = self.processor.clean_data(raw_df)
-        logger.info(f"Dados limpos para {year}: {len(clean_df)} linhas.")
+        logger.info(f"Dados limpos: {len(clean_df)} linhas.")
         
         if not clean_df.empty:
             self._insert_data(clean_df)
         
-        # Liberar memória explicitamente
-        del raw_df
-        del clean_df
+        del raw_df, clean_df
         gc.collect()
         
         elapsed = time.time() - start_time
-        logger.info(f"✅ Ano {year} processado em {elapsed:.2f} segundos.")
+        logger.info(f"✅ {year} processado em {elapsed:.2f}s")
 
     def _insert_data(self, df: pd.DataFrame):
-        """Insere os dados no banco de dados usando o método to_sql."""
         try:
-            logger.info(f"Iniciando inserção de {len(df)} registros...")
+            logger.info(f"Inserindo {len(df)} registros...")
             
-            # Otimização: usar chunks e método multi
             chunks = [df[i:i+Config.CHUNK_SIZE] for i in range(0, len(df), Config.CHUNK_SIZE)]
             
             for i, chunk in enumerate(chunks):
@@ -240,30 +225,29 @@ class ETLPipeline:
                     con=self.db.engine,
                     if_exists='append',
                     index=False,
-                    method='multi'
+                    method='multi',
+                    chunksize=1000
                 )
-                logger.info(f"Lote {i+1}/{len(chunks)} inserido com sucesso.")
+                logger.info(f"Lote {i+1}/{len(chunks)} inserido.")
                 del chunk
                 gc.collect()
                 
-            logger.info("✅ Inserção em lote concluída com sucesso.")
+            logger.info("✅ Dados inseridos com sucesso.")
         except IntegrityError:
-            logger.warning("Violação de chave primária detectada. Os dados provavelmente já existem.")
+            logger.warning("Dados duplicados. Pulando inserção.")
         except SQLAlchemyError as e:
-            logger.error(f"❌ Falha na inserção de dados: {e}", exc_info=True)
+            logger.error(f"❌ Falha na inserção: {e}", exc_info=True)
             raise
 
 def main():
-    """Função principal para executar o pipeline."""
     try:
         pipeline = ETLPipeline()
         pipeline.run()
     except Exception as e:
-        logger.critical(f"ERRO CRÍTICO NO PIPELINE: {e}", exc_info=True)
+        logger.critical(f"ERRO CRÍTICO: {e}", exc_info=True)
         raise
 
 if __name__ == "__main__":
-    # Adicionado para monitorar uso de memória
     import psutil
     process = psutil.Process()
     logger.info(f"Memória inicial: {process.memory_info().rss / (1024 * 1024):.2f} MB")
