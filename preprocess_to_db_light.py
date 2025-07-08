@@ -1,8 +1,11 @@
 import pandas as pd
 import zipfile
 import os
-from sqlalchemy import create_engine, text, inspect, Table, Column, MetaData
+from sqlalchemy import create_engine, text, inspect, MetaData, Table, Column
+from sqlalchemy import String, Integer, Date, Numeric, Text
+from sqlalchemy import PrimaryKeyConstraint
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+from sqlalchemy.dialects.postgresql import insert
 import time
 import logging
 from tqdm import tqdm
@@ -18,7 +21,7 @@ class Config:
     VALID_YEARS = ['2022', '2023', '2024']
     CHUNK_SIZE = 2000
     TABLE_NAME = 'financial_data'
-    BATCH_SIZE = 500  # Reduzido para melhor desempenho
+    BATCH_SIZE = 500  # Tamanho do lote para inserção
 
 def setup_logging():
     logging.basicConfig(
@@ -243,18 +246,19 @@ class ETLPipeline:
             # Inserir em lotes usando SQLAlchemy Core
             table = self.db.financial_table
             chunks = [data[i:i + Config.BATCH_SIZE] 
-                      for i in range(0, len(data), Config.BATCH_SIZE)]
+                    for i in range(0, len(data), Config.BATCH_SIZE)]
             
             with self.db.engine.begin() as conn:
                 for i, chunk in enumerate(chunks):
-                    # Usar inserção com ON CONFLICT UPDATE
-                    stmt = table.insert().values(chunk).on_conflict_do_update(
+                    # Usar inserção com ON CONFLICT UPDATE (sintaxe PostgreSQL)
+                    stmt = insert(table).values(chunk)
+                    stmt = stmt.on_conflict_do_update(
                         index_elements=['CD_CVM', 'DT_REFER', 'CD_CONTA'],
                         set_={
-                            'VL_CONTA': table.excluded.VL_CONTA,
-                            'DS_CONTA': table.excluded.DS_CONTA,
-                            'ST_CONTA_FIXA': table.excluded.ST_CONTA_FIXA,
-                            'GRUPO_DFP': table.excluded.GRUPO_DFP
+                            'VL_CONTA': stmt.excluded.VL_CONTA,
+                            'DS_CONTA': stmt.excluded.DS_CONTA,
+                            'ST_CONTA_FIXA': stmt.excluded.ST_CONTA_FIXA,
+                            'GRUPO_DFP': stmt.excluded.GRUPO_DFP
                         }
                     )
                     conn.execute(stmt)
