@@ -10,11 +10,11 @@ services:
     startCommand: "gunicorn flask_app:app"
     envVars:
       - key: DATABASE_URL
-        value: ${DATABASE_URL}
+        value: postgresql://modelfleuriet_user:A5ImVeUlPREqAvQeetMv9CCfFn1weRoI@dpg-d1m72be3jp1c73ede3s0-a.oregon-postgres.render.com/modelfleuriet_db_rhyp
       - key: PYTHON_VERSION
         value: "3.10.13"
       - key: SECRET_KEY
-        value: ${SECRET_KEY}
+        value: fPBcJhn71BhNv8VgAgMw1L9Wz3Jse8hWxSpubPeuqk-
 
 jobs:
   - name: run-valuation
