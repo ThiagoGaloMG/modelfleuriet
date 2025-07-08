@@ -6,7 +6,7 @@ services:
     plan: free
     buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn flask_app:app"
-    # ADICIONAR RECURSOS DE MEMÓRIA E SWAP
+    postDeployCommand: "python preprocess_to_db_light.py"  # 👈 Executa após o deploy
     resources:
       memory: 512MB
       swap: 1GB
@@ -17,12 +17,14 @@ services:
           property: connectionString
       - key: PYTHON_VERSION
         value: "3.10.13"
+      - key: SECRET_KEY
+        generateValue: true  # Gera automaticamente se necessário
 
 jobs:
   - name: run-valuation
     type: cron
-    schedule: "0 3 * * *"  # Executa às 3h UTC (00h BRT)
-    # ADICIONAR RECURSOS DE MEMÓRIA PARA O JOB
+    schedule: "0 3 * * *"  # 3h UTC (00h BRT)
+    plan: free
     resources:
       memory: 512MB
       swap: 1GB
