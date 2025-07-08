@@ -12,6 +12,12 @@ from datetime import datetime
 
 # --- Configuração ---
 load_dotenv()
+
+# CORRIGIDO: Definir constantes no início
+VALUATION_TABLE_NAME = 'valuation_results'
+BATCH_SIZE = 20  # Número de empresas processadas por lote
+MAX_RETRIES = 3  # Tentativas de reconexão ao banco
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - WORKER - %(levelname)s - %(message)s',
@@ -21,10 +27,6 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
-# Configurações
-BATCH_SIZE = 20  # Número de empresas processadas por lote
-MAX_RETRIES = 3  # Tentativas de reconexão ao banco
 
 def get_db_engine():
     """Cria e retorna a engine de conexão com o banco de dados."""
@@ -65,7 +67,7 @@ def create_valuation_table(engine):
     """Cria a tabela para armazenar os resultados do valuation."""
     inspector = inspect(engine)
     
-    # Força a recriação da tabela se já existir
+    # CORRIGIDO: Usar a constante definida
     if inspector.has_table(VALUATION_TABLE_NAME):
         logger.info(f"Tabela '{VALUATION_TABLE_NAME}' já existe. Recriando...")
         try:
@@ -104,7 +106,7 @@ def create_valuation_table(engine):
         logger.error(f"❌ Falha ao criar tabela de valuation: {e}")
         raise
 
-def load_ticker_mapping(file_path='data/mapeamento_tickers.csv'):
+def load_ticker_mapping(file_path='mapeamento_tickers.csv'):  # CORRIGIDO: removido 'data/'
     """Carrega e valida o mapeamento de tickers."""
     try:
         logger.info(f"Carregando mapeamento de tickers de {file_path}...")
@@ -162,7 +164,7 @@ def save_results_batch(engine, results_batch):
     try:
         df_batch = pd.DataFrame(results_batch)
         df_batch.to_sql(
-            'valuation_results',
+            VALUATION_TABLE_NAME,  # CORRIGIDO: usar constante
             engine,
             if_exists='append',
             index=False,
@@ -175,7 +177,7 @@ def save_results_batch(engine, results_batch):
         raise
 
 def main():
-    """Função principal do worker com processamento em lotes."""
+    """Função principal do worker com processamento otimizado."""
     logger.info("\n" + "="*60)
     logger.info(" INICIANDO WORKER DE ANÁLISE DE VALUATION ")
     logger.info("="*60)
@@ -196,58 +198,29 @@ def main():
         if df_full_data.empty or df_tickers.empty:
             raise ValueError("Dados insuficientes para análise")
 
-        # 4. Processa em lotes
-        resultados = []
-        total_empresas = len(df_tickers)
-        empresas_processadas = 0
+        # 4. CORRIGIDO: Executa análise usando a função original corretamente
+        logger.info(f"Iniciando análise de valuation para {len(df_tickers)} empresas...")
         
-        logger.info(f"\nIniciando análise para {total_empresas} empresas...")
+        # Usa a função original que processa todas as empresas de uma vez
+        resultados = run_full_valuation_analysis(df_full_data, df_tickers)
         
-        for idx, row in df_tickers.iterrows():
-            try:
-                ticker = row['TICKER']
-                cod_cvm = row['CD_CVM']
-                
-                # Filtra dados para a empresa atual
-                df_empresa = df_full_data[df_full_data['CD_CVM'] == cod_cvm].copy()
-                
-                if df_empresa.empty:
-                    logger.warning(f"Sem dados para {ticker} (CVM: {cod_cvm})")
-                    continue
-                
-                # Executa análise
-                resultado = run_full_valuation_analysis(
-                    df_empresa, 
-                    pd.DataFrame([row])  # Passa o mapeamento como DataFrame
-                )
-                
-                if resultado:
-                    resultados.extend(resultado)
-                    empresas_processadas += 1
-                    
-                    # Salva em lotes
-                    if empresas_processadas % BATCH_SIZE == 0:
-                        save_results_batch(db_engine, resultados)
-                        resultados = []  # Limpa para próximo lote
-                        log_memory_usage()
-                        gc.collect()  # Força liberação de memória
-                
-            except Exception as e:
-                logger.error(f"Erro ao processar {row['TICKER']}: {str(e)}")
-                continue
-
-        # Salva resultados finais
         if resultados:
+            # Salva todos os resultados
             save_results_batch(db_engine, resultados)
+            empresas_processadas = len(resultados)
+        else:
+            empresas_processadas = 0
+            logger.warning("Nenhum resultado gerado pela análise")
         
         # Estatísticas finais
         elapsed = (datetime.now() - start_time).total_seconds()
         logger.info("\n" + "="*60)
         logger.info(f" PROCESSAMENTO CONCLUÍDO ".center(60))
         logger.info("="*60)
-        logger.info(f"✅ Empresas processadas: {empresas_processadas}/{total_empresas}")
+        logger.info(f"✅ Empresas processadas: {empresas_processadas}/{len(df_tickers)}")
         logger.info(f"✅ Tempo total: {elapsed:.2f} segundos")
-        logger.info(f"✅ Média: {elapsed/max(1, empresas_processadas):.2f} s/empresa")
+        if empresas_processadas > 0:
+            logger.info(f"✅ Média: {elapsed/empresas_processadas:.2f} s/empresa")
         log_memory_usage()
         
     except Exception as e:
@@ -259,9 +232,6 @@ def main():
         logger.info("Worker finalizado.\n")
 
 if __name__ == "__main__":
-    # Configurações globais
-    VALUATION_TABLE_NAME = 'valuation_results'
-    
     try:
         main()
     except KeyboardInterrupt:
