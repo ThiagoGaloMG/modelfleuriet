@@ -10,6 +10,7 @@ import numpy as np
 from typing import Optional
 from dotenv import load_dotenv
 import gc
+from psycopg2.extras import execute_batch
 
 # Carrega variáveis de ambiente
 load_dotenv()
@@ -18,6 +19,7 @@ class Config:
     VALID_YEARS = ['2022', '2023', '2024']
     CHUNK_SIZE = 2000
     TABLE_NAME = 'financial_data'
+    BATCH_SIZE = 1000  # Tamanho do lote para inserção
 
 def setup_logging():
     logging.basicConfig(
@@ -118,20 +120,30 @@ class DatabaseManager:
 class DataProcessor:
     @staticmethod
     def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-        for col in ['DT_REFER', 'DT_FIM_EXERC', 'DT_INI_EXERC']:
+        # Converter colunas de data
+        date_cols = ['DT_REFER', 'DT_FIM_EXERC', 'DT_INI_EXERC']
+        for col in date_cols:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
         
+        # Converter colunas numéricas
         numeric_cols = ['VL_CONTA', 'CD_CVM', 'VERSAO']
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         
+        # Remover linhas com valores essenciais faltando
         required_cols = ['CD_CVM', 'DT_REFER', 'CD_CONTA', 'VL_CONTA']
         df.dropna(subset=[c for c in required_cols if c in df.columns], inplace=True)
         
+        # Garantir tipos de dados corretos
         if 'CD_CVM' in df.columns:
             df['CD_CVM'] = df['CD_CVM'].astype(int)
+        if 'CD_CONTA' in df.columns:
+            df['CD_CONTA'] = df['CD_CONTA'].astype(str)
+        
+        # Remover duplicatas baseadas na chave primária
+        df.drop_duplicates(subset=['CD_CVM', 'DT_REFER', 'CD_CONTA'], keep='last', inplace=True)
         
         return df
 
@@ -207,7 +219,7 @@ class ETLPipeline:
         logger.info(f"Dados limpos: {len(clean_df)} linhas.")
         
         if not clean_df.empty:
-            self._insert_data(clean_df, year)  # Passando o ano como parâmetro
+            self._upsert_data(clean_df, year)
         
         del raw_df, clean_df
         gc.collect()
@@ -215,14 +227,14 @@ class ETLPipeline:
         elapsed = time.time() - start_time
         logger.info(f"✅ {year} processado em {elapsed:.2f}s")
 
-    def _insert_data(self, df: pd.DataFrame, year: str):
+    def _upsert_data(self, df: pd.DataFrame, year: str):
         try:
-            logger.info(f"Processando {len(df)} registros para o ano {year}...")
+            logger.info(f"Preparando {len(df)} registros para upsert do ano {year}...")
             
             # Converter DataFrame para lista de dicionários
             data = df.to_dict('records')
             
-            # Query de UPSERT
+            # Query de UPSERT otimizada
             upsert_query = """
             INSERT INTO financial_data (
                 "CNPJ_CIA", "DT_REFER", "VERSAO", "DENOM_CIA", "CD_CVM", 
@@ -237,22 +249,19 @@ class ETLPipeline:
             DO UPDATE SET
                 "VL_CONTA" = EXCLUDED."VL_CONTA",
                 "DS_CONTA" = EXCLUDED."DS_CONTA",
-                "ST_CONTA_FIXA" = EXCLUDED."ST_CONTA_FIXA"
+                "ST_CONTA_FIXA" = EXCLUDED."ST_CONTA_FIXA",
+                "GRUPO_DFP" = EXCLUDED."GRUPO_DFP"
             """
             
-            # Executar em lotes
-            batch_size = 1000
-            with self.db.engine.connect() as conn:
-                for i in range(0, len(data), batch_size):
-                    batch = data[i:i + batch_size]
-                    conn.execute(text(upsert_query), batch)
-                    conn.commit()
-                    logger.info(f"Processado lote {i//batch_size + 1}/{(len(data)-1)//batch_size + 1}")
+            # Executar em lotes usando execute_batch para melhor performance
+            with self.db.engine.connect().connection.cursor() as cursor:
+                execute_batch(cursor, upsert_query, data, page_size=Config.BATCH_SIZE)
+                self.db.engine.connect().connection.commit()
             
-            logger.info(f"✅ Dados para {year} processados com sucesso")
+            logger.info(f"✅ Dados do ano {year} upserted com sucesso")
             
         except Exception as e:
-            logger.error(f"❌ Erro ao processar dados para {year}: {e}")
+            logger.error(f"❌ Erro durante upsert para o ano {year}: {e}", exc_info=True)
             raise
 
 def main():
