@@ -191,9 +191,11 @@ class ETLPipeline:
 
     def _process_year(self, year: str):
         zip_file = f'dfp_cia_aberta_{year}.zip'
-        logger.info(f"===> PROCESSANDO ANO: {year} <===")
-        start_time = time.time()
+        if not os.path.exists(zip_file):
+            logger.error(f"Arquivo {zip_file} não encontrado. Pulando ano {year}.")
+            return
         
+        start_time = time.time()  # <-- Adicionei esta linha que estava faltando
         raw_df = self.loader.load_from_zip(zip_file, year)
         if raw_df is None or raw_df.empty:
             logger.error(f"Nenhum dado válido para {year}. Pulando.")
