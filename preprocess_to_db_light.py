@@ -195,7 +195,7 @@ class ETLPipeline:
             logger.error(f"Arquivo {zip_file} não encontrado. Pulando ano {year}.")
             return
         
-        start_time = time.time()  # <-- Adicionei esta linha que estava faltando
+        start_time = time.time()
         raw_df = self.loader.load_from_zip(zip_file, year)
         if raw_df is None or raw_df.empty:
             logger.error(f"Nenhum dado válido para {year}. Pulando.")
@@ -207,7 +207,7 @@ class ETLPipeline:
         logger.info(f"Dados limpos: {len(clean_df)} linhas.")
         
         if not clean_df.empty:
-            self._insert_data(clean_df)
+            self._insert_data(clean_df, year)  # Passando o ano como parâmetro
         
         del raw_df, clean_df
         gc.collect()
@@ -215,28 +215,32 @@ class ETLPipeline:
         elapsed = time.time() - start_time
         logger.info(f"✅ {year} processado em {elapsed:.2f}s")
 
-    def _insert_data(self, df: pd.DataFrame):
-    try:
-        logger.info(f"Inserindo {len(df)} registros...")
-        
-        # Limpa dados existentes para o ano atual (opcional)
-        with self.db.engine.connect() as conn:
-            conn.execute(text(f'DELETE FROM {Config.TABLE_NAME} WHERE EXTRACT(YEAR FROM "DT_REFER") = {year}'))
-            conn.commit()
-        
-        # Insere novos dados
-        df.to_sql(
-            name=Config.TABLE_NAME,
-            con=self.db.engine,
-            if_exists='append',  # Mantém 'append' após a limpeza
-            index=False,
-            method='multi',
-            chunksize=1000
-        )
-        logger.info("✅ Dados inseridos com sucesso.")
-    except SQLAlchemyError as e:
-        logger.error(f"❌ Falha na inserção: {e}", exc_info=True)
-        raise
+    def _insert_data(self, df: pd.DataFrame, year: str):  # Recebe o ano como parâmetro
+        try:
+            logger.info(f"Inserindo {len(df)} registros para o ano {year}...")
+            
+            # Limpa dados existentes para o ano atual
+            with self.db.engine.connect() as conn:
+                conn.execute(text(f'DELETE FROM {Config.TABLE_NAME} WHERE EXTRACT(YEAR FROM "DT_REFER") = {year}'))
+                conn.commit()
+            
+            # Insere novos dados em lotes
+            chunks = [df[i:i+Config.CHUNK_SIZE] for i in range(0, len(df), Config.CHUNK_SIZE)]
+            for i, chunk in enumerate(chunks):
+                chunk.to_sql(
+                    name=Config.TABLE_NAME,
+                    con=self.db.engine,
+                    if_exists='append',
+                    index=False,
+                    method='multi',
+                    chunksize=1000
+                )
+                logger.info(f"Lote {i+1}/{len(chunks)} inserido.")
+            
+            logger.info("✅ Dados inseridos com sucesso.")
+        except SQLAlchemyError as e:
+            logger.error(f"❌ Falha na inserção: {e}", exc_info=True)
+            raise
 
 def main():
     try:
