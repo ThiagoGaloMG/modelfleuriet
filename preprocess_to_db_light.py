@@ -2,13 +2,14 @@ import pandas as pd
 import zipfile
 import os
 from sqlalchemy import create_engine, text, inspect
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 import time
 import logging
 from tqdm import tqdm
 import numpy as np
 from typing import Optional
 from dotenv import load_dotenv
+import gc  # Adicionado para gerenciamento de memória
 
 # Carrega variáveis de ambiente de um arquivo .env, se existir (para desenvolvimento local)
 load_dotenv()
@@ -50,11 +51,20 @@ class DatabaseManager:
             logger.error("A variável de ambiente DATABASE_URL não foi definida.")
             raise ValueError("A variável de ambiente DATABASE_URL não foi definida.")
         
-        # Adapta a URL de conexão para o driver psycopg2 do PostgreSQL
-        conn_str = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        # CORREÇÃO: Tratamento robusto da string de conexão
+        database_url = database_url.strip()
+        if " " in database_url:
+            database_url = database_url.split(" ")[0]
+        
+        # Garantir driver correto
+        if database_url.startswith("postgresql://"):
+            database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
         
         try:
-            engine = create_engine(conn_str, pool_pre_ping=True)
+            engine = create_engine(database_url, 
+                                 pool_pre_ping=True,
+                                 pool_size=5,  # Otimização para Render
+                                 max_overflow=10)
             logger.info("✅ Engine do banco de dados criada com sucesso.")
             return engine
         except Exception as e:
@@ -71,7 +81,6 @@ class DatabaseManager:
         logger.info(f"Tabela '{Config.TABLE_NAME}' não encontrada. Criando...")
         
         # Query para criar a tabela com tipos de dados otimizados para PostgreSQL
-        # e uma chave primária para garantir a integridade dos dados.
         create_table_query = text(f"""
         CREATE TABLE {Config.TABLE_NAME} (
             "CNPJ_CIA" VARCHAR(20),
@@ -93,7 +102,10 @@ class DatabaseManager:
         """)
         try:
             with self.engine.connect() as connection:
+                # Adicionado DROP TABLE se existir para garantir recriação
+                connection.execute(text(f"DROP TABLE IF EXISTS {Config.TABLE_NAME}"))
                 connection.execute(create_table_query)
+                connection.commit()
             logger.info(f"✅ Tabela '{Config.TABLE_NAME}' criada com sucesso.")
         except SQLAlchemyError as e:
             logger.error(f"❌ Falha ao criar a tabela: {e}", exc_info=True)
@@ -110,14 +122,18 @@ class DataProcessor:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
         
         # Converte colunas numéricas
-        df['VL_CONTA'] = pd.to_numeric(df['VL_CONTA'], errors='coerce')
-        df['CD_CVM'] = pd.to_numeric(df['CD_CVM'], errors='coerce')
-
+        numeric_cols = ['VL_CONTA', 'CD_CVM', 'VERSAO']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
         # Remove linhas onde valores essenciais são nulos
-        df.dropna(subset=['CD_CVM', 'DT_REFER', 'CD_CONTA', 'VL_CONTA'], inplace=True)
+        required_cols = ['CD_CVM', 'DT_REFER', 'CD_CONTA', 'VL_CONTA']
+        df.dropna(subset=[c for c in required_cols if c in df.columns], inplace=True)
         
         # Garante tipos de dados corretos
-        df['CD_CVM'] = df['CD_CVM'].astype(int)
+        if 'CD_CVM' in df.columns:
+            df['CD_CVM'] = df['CD_CVM'].astype(int)
         
         return df
 
@@ -141,7 +157,8 @@ class DataLoader:
                         with zip_ref.open(csv_file) as f:
                             df = pd.read_csv(
                                 f, sep=';', encoding='latin1', decimal=',',
-                                low_memory=False, dtype={'CD_CONTA': str}
+                                low_memory=False, 
+                                dtype={'CD_CONTA': str, 'CNPJ_CIA': str}  # Otimização de tipos
                             )
                             all_data.append(df)
                     except Exception as e:
@@ -151,7 +168,11 @@ class DataLoader:
                     logger.warning(f"Nenhum arquivo CSV válido encontrado em {zip_path}")
                     return None
 
-                return pd.concat(all_data, ignore_index=True)
+                combined_df = pd.concat(all_data, ignore_index=True)
+                # Liberar memória imediatamente após concatenação
+                del all_data
+                gc.collect()
+                return combined_df
         except Exception as e:
             logger.error(f"Erro ao processar o arquivo ZIP {zip_path}: {e}", exc_info=True)
             return None
@@ -169,7 +190,7 @@ class ETLPipeline:
         logger.info("INICIANDO PIPELINE DE CARGA DE DADOS")
         logger.info("="*50)
         
-        # 1. Garante que a tabela exista
+        # 1. Garante que a tabela exista (com recriação se necessário)
         self.db.create_table_if_not_exists()
         
         # 2. Processa os dados para cada ano configurado
@@ -197,6 +218,11 @@ class ETLPipeline:
         if not clean_df.empty:
             self._insert_data(clean_df)
         
+        # Liberar memória explicitamente
+        del raw_df
+        del clean_df
+        gc.collect()
+        
         elapsed = time.time() - start_time
         logger.info(f"✅ Ano {year} processado em {elapsed:.2f} segundos.")
 
@@ -204,21 +230,28 @@ class ETLPipeline:
         """Insere os dados no banco de dados usando o método to_sql."""
         try:
             logger.info(f"Iniciando inserção de {len(df)} registros...")
-            df.to_sql(
-                name=Config.TABLE_NAME,
-                con=self.db.engine,
-                if_exists='append', # Adiciona os dados, não substitui
-                index=False,
-                chunksize=Config.CHUNK_SIZE,
-                method='multi' # Usa inserção multi-valor, mais rápido
-            )
-            logger.info("Inserção em lote concluída com sucesso.")
+            
+            # Otimização: usar chunks e método multi
+            chunks = [df[i:i+Config.CHUNK_SIZE] for i in range(0, len(df), Config.CHUNK_SIZE)]
+            
+            for i, chunk in enumerate(chunks):
+                chunk.to_sql(
+                    name=Config.TABLE_NAME,
+                    con=self.db.engine,
+                    if_exists='append',
+                    index=False,
+                    method='multi'
+                )
+                logger.info(f"Lote {i+1}/{len(chunks)} inserido com sucesso.")
+                del chunk
+                gc.collect()
+                
+            logger.info("✅ Inserção em lote concluída com sucesso.")
         except IntegrityError:
             logger.warning("Violação de chave primária detectada. Os dados provavelmente já existem.")
         except SQLAlchemyError as e:
             logger.error(f"❌ Falha na inserção de dados: {e}", exc_info=True)
-            # Em um cenário real, poderia haver um fallback para inserção linha a linha aqui.
-            # Por simplicidade, vamos apenas logar o erro.
+            raise
 
 def main():
     """Função principal para executar o pipeline."""
@@ -227,6 +260,14 @@ def main():
         pipeline.run()
     except Exception as e:
         logger.critical(f"ERRO CRÍTICO NO PIPELINE: {e}", exc_info=True)
+        raise
 
 if __name__ == "__main__":
+    # Adicionado para monitorar uso de memória
+    import psutil
+    process = psutil.Process()
+    logger.info(f"Memória inicial: {process.memory_info().rss / (1024 * 1024):.2f} MB")
+    
     main()
+    
+    logger.info(f"Memória final: {process.memory_info().rss / (1024 * 1024):.2f} MB")
