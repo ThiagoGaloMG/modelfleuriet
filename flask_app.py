@@ -191,10 +191,9 @@ def ensure_valuation_table_exists(engine):
             logger.warning("Estrutura da tabela incompatível. Recriando...")
             with engine.begin() as conn:
                 conn.execute(text("DROP TABLE IF EXISTS valuation_results"))
-        
-        # Cria a nova tabela com estrutura atualizada
+                
         logger.info("Criando tabela 'valuation_results'...")
-        create_query = text("""
+        create_query = text(
         CREATE TABLE valuation_results (
             "Ticker" VARCHAR(20) PRIMARY KEY,
             "Nome" VARCHAR(255),
@@ -208,11 +207,10 @@ def ensure_valuation_table_exists(engine):
             "EVA" NUMERIC,
             "Capital_Empregado" NUMERIC, 
             "NOPAT" NUMERIC,
-            "Beta" NUMERIC,  # Novo campo adicionado
-            "Data_Calculo" DATE,  # Renomeado para padrão consistente
+            "Beta" NUMERIC,
+            "Data_Calculo" DATE,
             "Data_Atualizacao" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-        """)
         
         with engine.begin() as conn:  # Usando begin() para transação automática
             conn.execute(create_query)
