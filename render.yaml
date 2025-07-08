@@ -4,33 +4,25 @@ services:
     region: oregon
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
+    buildCommand: |
+      pip install -r requirements.txt
+      python -c "from core.valuation_analysis import VALUATION_CONFIG; print('Configuração de valuation:', VALUATION_CONFIG)"
     startCommand: "gunicorn flask_app:app"
-    postDeployCommand: "python preprocess_to_db_light.py"  # 👈 Executa após o deploy
-    resources:
-      memory: 512MB
-      swap: 1GB
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: modelfleuriet-db
-          property: connectionString
+        value: ${DATABASE_URL}
       - key: PYTHON_VERSION
         value: "3.10.13"
       - key: SECRET_KEY
-        generateValue: true  # Gera automaticamente se necessário
+        value: ${SECRET_KEY}
 
 jobs:
   - name: run-valuation
     type: cron
     schedule: "0 3 * * *"  # 3h UTC (00h BRT)
     plan: free
-    resources:
-      memory: 512MB
-      swap: 1GB
-    command: "python run_valuation_worker.py"
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: modelfleuriet-db
-          property: connectionString
+        value: ${DATABASE_URL}
+    buildCommand: pip install -r requirements.txt
+    runCommand: python run_valuation_worker.py
