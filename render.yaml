@@ -6,6 +6,10 @@ services:
     plan: free
     buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn flask_app:app"
+    # ADICIONAR RECURSOS DE MEMÓRIA E SWAP
+    resources:
+      memory: 512MB
+      swap: 1GB
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -16,8 +20,12 @@ services:
 
 jobs:
   - name: run-valuation
-    type: cron  # Corrigido de 'script' para 'cron'
+    type: cron
     schedule: "0 3 * * *"  # Executa às 3h UTC (00h BRT)
+    # ADICIONAR RECURSOS DE MEMÓRIA PARA O JOB
+    resources:
+      memory: 512MB
+      swap: 1GB
     command: "python run_valuation_worker.py"
     envVars:
       - key: DATABASE_URL
