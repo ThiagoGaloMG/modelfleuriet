@@ -192,8 +192,16 @@ def ensure_valuation_table_exists(engine):
             with engine.begin() as conn:
                 conn.execute(text("DROP TABLE IF EXISTS valuation_results"))
                 
-        logger.info("Criando tabela 'valuation_results'...")
-        create_query = text(
+        try:
+    logger.info("Verificando/recriando tabela 'valuation_results'...")
+    
+    # Primeiro remove a tabela se já existir
+    with engine.connect() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS valuation_results"))
+        conn.commit()
+
+    # Cria a nova tabela
+    create_query = text("""
         CREATE TABLE valuation_results (
             "Ticker" VARCHAR(20) PRIMARY KEY,
             "Nome" VARCHAR(255),
@@ -210,7 +218,18 @@ def ensure_valuation_table_exists(engine):
             "Beta" NUMERIC,
             "Data_Calculo" DATE,
             "Data_Atualizacao" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
+        )
+    """)
+    
+    with engine.connect() as conn:
+        conn.execute(create_query)
+        conn.commit()
+    
+    logger.info("✅ Tabela 'valuation_results' criada com sucesso")
+
+except SQLAlchemyError as e:
+    logger.error(f"❌ Falha ao criar tabela de valuation: {e}")
+    raise
         
         with engine.begin() as conn:  # Usando begin() para transação automática
             conn.execute(create_query)
