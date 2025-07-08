@@ -141,14 +141,28 @@ def load_financial_data(engine):
     """Carrega dados financeiros com otimização de memória"""
     logger.info("Carregando dados financeiros...")
     
-    # ATUALIZADO: usar os nomes exatos das colunas como definidos na tabela
-    cols = ['"CD_CVM"', '"CD_CONTA"', '"VL_CONTA"', '"DT_REFER"', '"DENOM_CIA"']
+    # Verifique primeiro se a tabela existe
+    inspector = inspect(engine)
+    if not inspector.has_table('financial_data'):
+        logger.error("Tabela financial_data não existe!")
+        return pd.DataFrame()
+    
+    # Query com nomes de colunas exatos
+    query = text('SELECT "CD_CVM", "CD_CONTA", "VL_CONTA", "DT_REFER", "DENOM_CIA" FROM financial_data')
     
     for attempt in range(MAX_RETRIES):
         try:
             with engine.connect() as conn:
+                # Verifique se há dados primeiro
+                count = conn.execute(text('SELECT COUNT(*) FROM financial_data')).scalar()
+                logger.info(f"Total de registros na tabela: {count}")
+                
+                if count == 0:
+                    return pd.DataFrame()
+                
+                # Carrega os dados
                 df = pd.read_sql(
-                    f'SELECT {",".join(cols)} FROM financial_data',
+                    query,
                     conn,
                     chunksize=50000
                 )
@@ -193,6 +207,13 @@ def main():
         start_time = datetime.now()
         db_engine = get_db_engine()
         log_memory_usage()
+
+        # VERIFICAÇÃO ADICIONADA
+        with db_engine.connect() as conn:
+            db_url = conn.engine.url
+            logger.info(f"Conectado ao banco: {db_url.host}/{db_url.database}")
+            tables = inspect(db_engine).get_table_names()
+            logger.info(f"Tabelas disponíveis: {tables}")
 
         # Prepara tabela
         create_valuation_table(db_engine)
