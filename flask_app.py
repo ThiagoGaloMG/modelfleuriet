@@ -52,10 +52,12 @@ def create_db_engine():
         logger.error("DATABASE_URL não definida.")
         raise ValueError("DATABASE_URL não definida.")
     
-    # Corrige a string de conexão para o novo banco
+    # Corrige a string de conexão para o formato adequado
     database_url = database_url.strip()
-    if "postgresql://" in database_url and "postgresql+psycopg2://" not in database_url:
-        database_url = database_url.replace("postgresql://", "postgresql+psycopg2://")
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif database_url.startswith("postgresql://") and "+psycopg2" not in database_url:
+        database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
     
     # Remove espaços e parâmetros extras
     database_url = database_url.split(" ")[0].split("?")[0]
@@ -84,7 +86,7 @@ def create_db_engine():
         logger.error(f"❌ Falha ao criar a engine do banco de dados: {e}", exc_info=True)
         return None
 
-def load_ticker_mapping(file_path='mapeamento_tickers.csv'):  # CORRIGIDO: removido 'data/'
+def load_ticker_mapping(file_path='mapeamento_tickers.csv'):
     """Carrega o mapeamento de tickers com tratamento de erros"""
     logger.info(f"Carregando mapeamento de tickers de {file_path}...")
     try:
@@ -130,8 +132,8 @@ def get_companies_list(engine, ticker_mapping_df):
             how='left'
         )
         
-        # CORRIGIDO: Substituir fillna inplace por assign
-        final_df = final_df.assign(TICKER=final_df['TICKER'].fillna('S/TICKER'))
+        # Preenche tickers faltantes
+        final_df['TICKER'] = final_df['TICKER'].fillna('S/TICKER')
         
         logger.info(f"✅ {len(final_df)} empresas encontradas e mapeadas.")
         return final_df.to_dict(orient='records')
@@ -166,7 +168,9 @@ def ensure_valuation_table_exists(engine):
                 'eva': 'numeric',
                 'capital_empregado': 'numeric',
                 'nopat': 'numeric',
-                'data_atualizacao': 'timestamp'  # Adicionado campo de timestamp
+                'beta': 'numeric',
+                'data_calculo': 'date',
+                'data_atualizacao': 'timestamp'
             }
             
             # Obtém os metadados das colunas existentes
@@ -192,46 +196,28 @@ def ensure_valuation_table_exists(engine):
             with engine.begin() as conn:
                 conn.execute(text("DROP TABLE IF EXISTS valuation_results"))
                 
-        try:
-    logger.info("Verificando/recriando tabela 'valuation_results'...")
-    
-    # Primeiro remove a tabela se já existir
-    with engine.connect() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS valuation_results"))
-        conn.commit()
-
-    # Cria a nova tabela
-    create_query = text("""
-        CREATE TABLE valuation_results (
-            "Ticker" VARCHAR(20) PRIMARY KEY,
-            "Nome" VARCHAR(255),
-            "Upside" NUMERIC, 
-            "ROIC" NUMERIC, 
-            "WACC" NUMERIC, 
-            "Spread" NUMERIC,
-            "Preco_Atual" NUMERIC, 
-            "Preco_Justo" NUMERIC,
-            "Market_Cap" BIGINT, 
-            "EVA" NUMERIC,
-            "Capital_Empregado" NUMERIC, 
-            "NOPAT" NUMERIC,
-            "Beta" NUMERIC,
-            "Data_Calculo" DATE,
-            "Data_Atualizacao" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    with engine.connect() as conn:
-        conn.execute(create_query)
-        conn.commit()
-    
-    logger.info("✅ Tabela 'valuation_results' criada com sucesso")
-
-except SQLAlchemyError as e:
-    logger.error(f"❌ Falha ao criar tabela de valuation: {e}")
-    raise
+        logger.info("Criando tabela 'valuation_results'...")
+        create_query = text("""
+            CREATE TABLE valuation_results (
+                "Ticker" VARCHAR(20) PRIMARY KEY,
+                "Nome" VARCHAR(255),
+                "Upside" NUMERIC, 
+                "ROIC" NUMERIC, 
+                "WACC" NUMERIC, 
+                "Spread" NUMERIC,
+                "Preco_Atual" NUMERIC, 
+                "Preco_Justo" NUMERIC,
+                "Market_Cap" BIGINT, 
+                "EVA" NUMERIC,
+                "Capital_Empregado" NUMERIC, 
+                "NOPAT" NUMERIC,
+                "Beta" NUMERIC,
+                "Data_Calculo" DATE,
+                "Data_Atualizacao" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         
-        with engine.begin() as conn:  # Usando begin() para transação automática
+        with engine.begin() as conn:
             conn.execute(create_query)
         
         logger.info("✅ Tabela 'valuation_results' criada com sucesso.")
@@ -259,7 +245,7 @@ def run_valuation_worker_if_needed(engine):
             df_tickers = load_ticker_mapping()
             with engine.connect() as connection:
                 # Carrega apenas colunas necessárias
-                cols = ["CD_CVM", "CD_CONTA", "VL_CONTA", "DT_REFER"]
+                cols = ["CD_CVM", "CD_CONTA", "VL_CONTA", "DT_REFER", "DENOM_CIA"]
                 df_full_data = pd.read_sql(
                     f'SELECT {",".join(cols)} FROM financial_data',
                     connection
@@ -273,7 +259,7 @@ def run_valuation_worker_if_needed(engine):
                     df_results.to_sql(
                         'valuation_results',
                         engine,
-                        if_exists='append',  # Alterado para append
+                        if_exists='append',
                         index=False,
                         chunksize=100,
                         method='multi'
@@ -291,9 +277,9 @@ def run_valuation_worker_if_needed(engine):
 try:
     db_engine = create_db_engine()
     df_tickers = load_ticker_mapping()
-    companies_list = get_companies_list(db_engine, df_tickers)
+    companies_list = get_companies_list(db_engine, df_tickers) if db_engine else []
     
-    if ensure_valuation_table_exists(db_engine):
+    if db_engine and ensure_valuation_table_exists(db_engine):
         run_valuation_worker_if_needed(db_engine)
     else:
         logger.error("Falha ao garantir tabela de valuation. Algumas funcionalidades podem não estar disponíveis.")
@@ -436,8 +422,6 @@ def page_not_found(e):
 def internal_server_error(e):
     logger.error(f"Erro interno do servidor: {e}", exc_info=True)
     return render_template('500.html'), 500
-
-# REMOVIDO: endpoint de shutdown (não deve estar em produção)
 
 if __name__ == '__main__':
     try:
