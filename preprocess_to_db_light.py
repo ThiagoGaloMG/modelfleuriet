@@ -215,31 +215,44 @@ class ETLPipeline:
         elapsed = time.time() - start_time
         logger.info(f"✅ {year} processado em {elapsed:.2f}s")
 
-    def _insert_data(self, df: pd.DataFrame, year: str):  # Recebe o ano como parâmetro
+    def _insert_data(self, df: pd.DataFrame, year: str):
         try:
-            logger.info(f"Inserindo {len(df)} registros para o ano {year}...")
+            logger.info(f"Processando {len(df)} registros para o ano {year}...")
             
-            # Limpa dados existentes para o ano atual
+            # Converter DataFrame para lista de dicionários
+            data = df.to_dict('records')
+            
+            # Query de UPSERT
+            upsert_query = """
+            INSERT INTO financial_data (
+                "CNPJ_CIA", "DT_REFER", "VERSAO", "DENOM_CIA", "CD_CVM", 
+                "GRUPO_DFP", "MOEDA", "ESCALA_MOEDA", "ORDEM_EXERC", "DT_FIM_EXERC",
+                "CD_CONTA", "DS_CONTA", "VL_CONTA", "ST_CONTA_FIXA", "DT_INI_EXERC", "COLUNA_DF"
+            ) VALUES (
+                %(CNPJ_CIA)s, %(DT_REFER)s, %(VERSAO)s, %(DENOM_CIA)s, %(CD_CVM)s,
+                %(GRUPO_DFP)s, %(MOEDA)s, %(ESCALA_MOEDA)s, %(ORDEM_EXERC)s, %(DT_FIM_EXERC)s,
+                %(CD_CONTA)s, %(DS_CONTA)s, %(VL_CONTA)s, %(ST_CONTA_FIXA)s, %(DT_INI_EXERC)s, %(COLUNA_DF)s
+            )
+            ON CONFLICT ("CD_CVM", "DT_REFER", "CD_CONTA") 
+            DO UPDATE SET
+                "VL_CONTA" = EXCLUDED."VL_CONTA",
+                "DS_CONTA" = EXCLUDED."DS_CONTA",
+                "ST_CONTA_FIXA" = EXCLUDED."ST_CONTA_FIXA"
+            """
+            
+            # Executar em lotes
+            batch_size = 1000
             with self.db.engine.connect() as conn:
-                conn.execute(text(f'DELETE FROM {Config.TABLE_NAME} WHERE EXTRACT(YEAR FROM "DT_REFER") = {year}'))
-                conn.commit()
+                for i in range(0, len(data), batch_size):
+                    batch = data[i:i + batch_size]
+                    conn.execute(text(upsert_query), batch)
+                    conn.commit()
+                    logger.info(f"Processado lote {i//batch_size + 1}/{(len(data)-1)//batch_size + 1}")
             
-            # Insere novos dados em lotes
-            chunks = [df[i:i+Config.CHUNK_SIZE] for i in range(0, len(df), Config.CHUNK_SIZE)]
-            for i, chunk in enumerate(chunks):
-                chunk.to_sql(
-                    name=Config.TABLE_NAME,
-                    con=self.db.engine,
-                    if_exists='append',
-                    index=False,
-                    method='multi',
-                    chunksize=1000
-                )
-                logger.info(f"Lote {i+1}/{len(chunks)} inserido.")
+            logger.info(f"✅ Dados para {year} processados com sucesso")
             
-            logger.info("✅ Dados inseridos com sucesso.")
-        except SQLAlchemyError as e:
-            logger.error(f"❌ Falha na inserção: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"❌ Erro ao processar dados para {year}: {e}")
             raise
 
 def main():
