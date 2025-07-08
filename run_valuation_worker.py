@@ -141,7 +141,8 @@ def load_financial_data(engine):
     """Carrega dados financeiros com otimização de memória"""
     logger.info("Carregando dados financeiros...")
     
-    cols = ["CD_CVM", "CD_CONTA", "VL_CONTA", "DT_REFER", "DENOM_CIA"]
+    # ATUALIZADO: usar os nomes exatos das colunas como definidos na tabela
+    cols = ['"CD_CVM"', '"CD_CONTA"', '"VL_CONTA"', '"DT_REFER"', '"DENOM_CIA"']
     
     for attempt in range(MAX_RETRIES):
         try:
