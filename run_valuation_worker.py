@@ -78,9 +78,9 @@ def create_valuation_table(engine):
             logger.error(f"Erro ao dropar tabela existente: {e}")
             raise
 
-    logger.info(f"Criando tabela '{VALUATION_TABLE_NAME}'...")
-    create_query = text(f"""
-    CREATE TABLE {VALUATION_TABLE_NAME} (
+logger.info(f"Criando tabela '{VALUATION_TABLE_NAME}'...")
+create_query = text(f"""
+    CREATE TABLE IF NOT EXISTS {VALUATION_TABLE_NAME} (
         "Ticker" VARCHAR(20) PRIMARY KEY,
         "Nome" VARCHAR(255),
         "Upside" NUMERIC, 
@@ -94,8 +94,8 @@ def create_valuation_table(engine):
         "Capital_Empregado" NUMERIC, 
         "NOPAT" NUMERIC,
         "Data_Atualizacao" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-    """)
+    )
+""")
     
     try:
         with engine.connect() as connection:
