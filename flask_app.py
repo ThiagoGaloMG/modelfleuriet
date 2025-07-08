@@ -78,16 +78,16 @@ def create_db_engine():
         # Testa a conexão
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-            logger.info("✅ Conexão com o banco de dados estabelecida.")
+            logger.info("[OK] Conexão com o banco de dados estabelecida.")
             
             # Verifica se a tabela financial_data existe
             inspector = inspect(engine)
             if not inspector.has_table('financial_data'):
-                logger.error("❌ Tabela 'financial_data' não encontrada no banco")
+                logger.error("[ERRO] Tabela 'financial_data' não encontrada no banco")
             
         return engine
     except Exception as e:
-        logger.error(f"❌ Falha ao conectar ao banco: {e}", exc_info=True)
+        logger.error(f"[ERRO] Falha ao conectar ao banco: {e}", exc_info=True)
         return None
 
 def load_ticker_mapping(file_path=None):
@@ -118,10 +118,10 @@ def load_ticker_mapping(file_path=None):
         # Remove duplicatas
         df_tickers = df_tickers.drop_duplicates(subset=['CD_CVM'], keep='first')
         
-        logger.info(f"✅ {len(df_tickers)} mapeamentos carregados.")
+        logger.info(f"[OK] {len(df_tickers)} mapeamentos carregados.")
         return df_tickers[['CD_CVM', 'TICKER', 'NOME_EMPRESA']]
     except Exception as e:
-        logger.error(f"❌ Erro ao carregar mapeamento: {e}", exc_info=True)
+        logger.error(f"[ERRO] Erro ao carregar mapeamento: {e}", exc_info=True)
         return pd.DataFrame()
 
 def get_companies_list(engine, ticker_mapping_df):
@@ -147,19 +147,19 @@ def get_companies_list(engine, ticker_mapping_df):
             how='left'
         )
         
-        # Se não houver correspondência no merge, usa os dados do CSV
+        # Correção: usar colunas corretas após o merge
         final_df['TICKER'] = final_df['TICKER'].fillna(final_df['NOME_EMPRESA'])
-        final_df['NOME_EMPRESA'] = final_df['NOME_EMPRESA'].fillna(final_df['NOME_EMPRESA_y'])
+        final_df['NOME_EMPRESA'] = final_df['NOME_EMPRESA']  # Mantém o nome original do banco
         
         logger.info(f"Empresas após merge: {len(final_df)}")
         
         # Remove colunas desnecessárias e duplicatas
         final_df = final_df[['CD_CVM', 'TICKER', 'NOME_EMPRESA']].drop_duplicates()
         
-        logger.info(f"✅ {len(final_df)} empresas encontradas e mapeadas.")
+        logger.info(f"[OK] {len(final_df)} empresas encontradas e mapeadas.")
         return final_df.to_dict(orient='records')
     except Exception as e:
-        logger.error(f"❌ Erro ao buscar lista de empresas: {e}", exc_info=True)
+        logger.error(f"[ERRO] Erro ao buscar lista de empresas: {e}", exc_info=True)
         return []
 
 def ensure_valuation_table_exists(engine):
@@ -199,11 +199,11 @@ def ensure_valuation_table_exists(engine):
         with engine.begin() as conn:
             conn.execute(create_query)
         
-        logger.info("✅ Tabela 'valuation_results' criada com sucesso.")
+        logger.info("[OK] Tabela 'valuation_results' criada com sucesso.")
         return True
         
     except Exception as e:
-        logger.error(f"❌ Erro ao verificar/criar tabela valuation_results: {e}", exc_info=True)
+        logger.error(f"[ERRO] Erro ao verificar/criar tabela valuation_results: {e}", exc_info=True)
         return False
 
 def run_valuation_worker_if_needed(engine):
@@ -227,7 +227,8 @@ def run_valuation_worker_if_needed(engine):
                 return
                 
             with engine.connect() as connection:
-                cols = ["CD_CVM", "CD_CONTA", "VL_CONTA", "DT_REFER", "DENOM_CIA"]
+                # CORREÇÃO: usar nomes de colunas em minúsculas
+                cols = ["cd_cvm", "cd_conta", "vl_conta", "dt_refer", "denom_cia"]
                 df_full_data = pd.read_sql(
                     text(f'SELECT {",".join(cols)} FROM financial_data'),
                     connection
@@ -246,14 +247,14 @@ def run_valuation_worker_if_needed(engine):
                         chunksize=100,
                         method='multi'
                     )
-                    logger.info(f"✅ Worker executado com sucesso. {len(df_results)} resultados salvos.")
+                    logger.info(f"[OK] Worker executado com sucesso. {len(df_results)} resultados salvos.")
                 else:
                     logger.warning("Worker não gerou resultados.")
             else:
                 logger.warning("Dados financeiros não encontrados.")
                 
     except Exception as e:
-        logger.error(f"❌ Erro ao executar worker de valuation: {e}", exc_info=True)
+        logger.error(f"[ERRO] Erro ao executar worker de valuation: {e}", exc_info=True)
 
 # Inicialização segura
 try:
@@ -263,7 +264,7 @@ try:
     
     if db_engine:
         if not inspect(db_engine).has_table('financial_data'):
-            logger.error("TABELA FINANCIAL_DATA NÃO ENCONTRADA!")
+            logger.error("[ERRO] TABELA FINANCIAL_DATA NÃO ENCONTRADA!")
         
         if ensure_valuation_table_exists(db_engine):
             run_valuation_worker_if_needed(db_engine)
@@ -273,7 +274,7 @@ try:
         logger.error("Falha na conexão com o banco de dados.")
         
 except Exception as e:
-    logger.critical(f"❌ Falha na inicialização: {e}", exc_info=True)
+    logger.critical(f"[ERRO] Falha na inicialização: {e}", exc_info=True)
     companies_list = []
 
 @app.route('/health')
