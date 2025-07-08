@@ -52,19 +52,28 @@ def create_db_engine():
         logger.error("DATABASE_URL não definida.")
         raise ValueError("DATABASE_URL não definida.")
     
-    # Corrige a string de conexão se necessário
+    # Corrige a string de conexão para o novo banco
+    database_url = database_url.strip()
     if "postgresql://" in database_url and "postgresql+psycopg2://" not in database_url:
         database_url = database_url.replace("postgresql://", "postgresql+psycopg2://")
     
-    # Remove possíveis caracteres inválidos
-    database_url = database_url.split(" ")[0].strip()
+    # Remove espaços e parâmetros extras
+    database_url = database_url.split(" ")[0].split("?")[0]
     
     try:
         engine = create_engine(
             database_url,
             pool_pre_ping=True,
+            pool_size=5,
+            max_overflow=10,
             pool_recycle=3600,
-            connect_args={"connect_timeout": 30}
+            connect_args={
+                "connect_timeout": 10,
+                "keepalives": 1,
+                "keepalives_idle": 30,
+                "keepalives_interval": 10,
+                "keepalives_count": 5
+            }
         )
         # Testa a conexão
         with engine.connect() as conn:
@@ -131,41 +140,59 @@ def get_companies_list(engine, ticker_mapping_df):
         return []
 
 def ensure_valuation_table_exists(engine):
-    """Garante que a tabela valuation_results existe, recriando se necessário"""
+    """Garante que a tabela valuation_results existe com a estrutura correta"""
     if engine is None:
+        logger.error("Engine do banco de dados não disponível")
         return False
     
     try:
         inspector = inspect(engine)
         
-        # Força recriação da tabela se existir
+        # Verifica se a tabela existe e tem a estrutura correta
         if inspector.has_table('valuation_results'):
             logger.info("Tabela 'valuation_results' existe. Verificando estrutura...")
-            try:
-                with engine.connect() as conn:
-                    # Verifica se a tabela tem a estrutura correta
-                    result = conn.execute(text("""
-                        SELECT column_name FROM information_schema.columns 
-                        WHERE table_name = 'valuation_results'
-                    """))
-                    cols = {row[0] for row in result}
-                    
-                    required_cols = {
-                        'ticker', 'nome', 'upside', 'roic', 'wacc', 'spread',
-                        'preco_atual', 'preco_justo', 'market_cap', 'eva',
-                        'capital_empregado', 'nopat'
-                    }
-                    
-                    if not required_cols.issubset(cols):
-                        logger.warning("Estrutura da tabela incorreta. Recriando...")
-                        conn.execute(text("DROP TABLE IF EXISTS valuation_results"))
-                        inspector = inspect(engine)  # Atualiza o inspector
-                    else:
-                        return True
-            except Exception as e:
-                logger.error(f"Erro ao verificar estrutura da tabela: {e}")
-                return False
+            
+            # Lista de colunas obrigatórias com seus tipos esperados
+            required_columns = {
+                'ticker': 'varchar',
+                'nome': 'varchar',
+                'upside': 'numeric',
+                'roic': 'numeric',
+                'wacc': 'numeric',
+                'spread': 'numeric',
+                'preco_atual': 'numeric',
+                'preco_justo': 'numeric',
+                'market_cap': 'int8',  # bigint
+                'eva': 'numeric',
+                'capital_empregado': 'numeric',
+                'nopat': 'numeric',
+                'data_atualizacao': 'timestamp'  # Adicionado campo de timestamp
+            }
+            
+            # Obtém os metadados das colunas existentes
+            existing_columns = {}
+            for column in inspector.get_columns('valuation_results'):
+                existing_columns[column['name'].lower()] = column['type'].__visit_name__.lower()
+            
+            # Verifica se todas as colunas necessárias existem com os tipos corretos
+            missing_or_invalid = False
+            for col, expected_type in required_columns.items():
+                if col not in existing_columns:
+                    logger.warning(f"Coluna faltando: {col} (esperado: {expected_type})")
+                    missing_or_invalid = True
+                elif existing_columns[col] != expected_type:
+                    logger.warning(f"Tipo incorreto para {col}: {existing_columns[col]} (esperado: {expected_type})")
+                    missing_or_invalid = True
+            
+            if not missing_or_invalid:
+                logger.info("✅ Estrutura da tabela está correta")
+                return True
+            
+            logger.warning("Estrutura da tabela incompatível. Recriando...")
+            with engine.begin() as conn:
+                conn.execute(text("DROP TABLE IF EXISTS valuation_results"))
         
+        # Cria a nova tabela com estrutura atualizada
         logger.info("Criando tabela 'valuation_results'...")
         create_query = text("""
         CREATE TABLE valuation_results (
@@ -181,19 +208,20 @@ def ensure_valuation_table_exists(engine):
             "EVA" NUMERIC,
             "Capital_Empregado" NUMERIC, 
             "NOPAT" NUMERIC,
+            "Beta" NUMERIC,  # Novo campo adicionado
+            "Data_Calculo" DATE,  # Renomeado para padrão consistente
             "Data_Atualizacao" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
         
-        with engine.connect() as connection:
-            connection.execute(create_query)
-            connection.commit()
+        with engine.begin() as conn:  # Usando begin() para transação automática
+            conn.execute(create_query)
         
         logger.info("✅ Tabela 'valuation_results' criada com sucesso.")
         return True
         
     except Exception as e:
-        logger.error(f"❌ Erro ao criar tabela valuation_results: {e}", exc_info=True)
+        logger.error(f"❌ Erro ao verificar/criar tabela valuation_results: {e}", exc_info=True)
         return False
 
 def run_valuation_worker_if_needed(engine):
