@@ -1,7 +1,7 @@
 import pandas as pd
 import zipfile
 import os
-from sqlalchemy import create_engine, text, inspect
+from sqlalchemy import create_engine, text, inspect, Table, Column, MetaData
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 import time
 import logging
@@ -10,7 +10,6 @@ import numpy as np
 from typing import Optional
 from dotenv import load_dotenv
 import gc
-from psycopg2.extras import execute_batch
 
 # Carrega variáveis de ambiente
 load_dotenv()
@@ -19,7 +18,7 @@ class Config:
     VALID_YEARS = ['2022', '2023', '2024']
     CHUNK_SIZE = 2000
     TABLE_NAME = 'financial_data'
-    BATCH_SIZE = 1000  # Tamanho do lote para inserção
+    BATCH_SIZE = 500  # Reduzido para melhor desempenho
 
 def setup_logging():
     logging.basicConfig(
@@ -35,6 +34,27 @@ logger = setup_logging()
 class DatabaseManager:
     def __init__(self):
         self.engine = self._create_engine()
+        self.metadata = MetaData()
+        self.financial_table = Table(
+            Config.TABLE_NAME, self.metadata,
+            Column('CNPJ_CIA', String(20)),
+            Column('DT_REFER', Date),
+            Column('VERSAO', Integer),
+            Column('DENOM_CIA', String(255)),
+            Column('CD_CVM', Integer),
+            Column('GRUPO_DFP', String(255)),
+            Column('MOEDA', String(10)),
+            Column('ESCALA_MOEDA', String(20)),
+            Column('ORDEM_EXERC', String(20)),
+            Column('DT_FIM_EXERC', Date),
+            Column('CD_CONTA', String(50)),
+            Column('DS_CONTA', Text),
+            Column('VL_CONTA', Numeric(20, 2)),
+            Column('ST_CONTA_FIXA', String(10)),
+            Column('DT_INI_EXERC', Date),
+            Column('COLUNA_DF', String(50)),
+            PrimaryKeyConstraint('CD_CVM', 'DT_REFER', 'CD_CONTA')
+        )
 
     def _create_engine(self):
         database_url = os.getenv('DATABASE_URL')
@@ -85,33 +105,8 @@ class DatabaseManager:
                 raise
 
         logger.info(f"Criando tabela '{Config.TABLE_NAME}'...")
-        
-        create_table_query = text(f"""
-        CREATE TABLE {Config.TABLE_NAME} (
-            "CNPJ_CIA" VARCHAR(20),
-            "DT_REFER" DATE,
-            "VERSAO" INTEGER,
-            "DENOM_CIA" VARCHAR(255),
-            "CD_CVM" INTEGER,
-            "GRUPO_DFP" VARCHAR(255),
-            "MOEDA" VARCHAR(10),
-            "ESCALA_MOEDA" VARCHAR(20),
-            "ORDEM_EXERC" VARCHAR(20),
-            "DT_FIM_EXERC" DATE,
-            "CD_CONTA" VARCHAR(50),
-            "DS_CONTA" TEXT,
-            "VL_CONTA" NUMERIC(20, 2),
-            "ST_CONTA_FIXA" VARCHAR(10),
-            "DT_INI_EXERC" DATE,
-            "COLUNA_DF" VARCHAR(50),
-            PRIMARY KEY ("CD_CVM", "DT_REFER", "CD_CONTA")
-        );
-        """)
-        
         try:
-            with self.engine.connect() as connection:
-                connection.execute(create_table_query)
-                connection.commit()
+            self.metadata.create_all(self.engine)
             logger.info(f"✅ Tabela '{Config.TABLE_NAME}' criada com sucesso.")
         except SQLAlchemyError as e:
             logger.error(f"❌ Falha ao criar tabela: {e}", exc_info=True)
@@ -221,7 +216,7 @@ class ETLPipeline:
         logger.info(f"Dados limpos: {len(clean_df)} linhas.")
         
         if not clean_df.empty:
-            self._upsert_data(clean_df, year)
+            self._insert_data(clean_df, year)
         
         del raw_df, clean_df
         gc.collect()
@@ -229,52 +224,46 @@ class ETLPipeline:
         elapsed = time.time() - start_time
         logger.info(f"✅ {year} processado em {elapsed:.2f}s")
 
-    def _upsert_data(self, df: pd.DataFrame, year: str):
+    def _insert_data(self, df: pd.DataFrame, year: str):
         try:
-            logger.info(f"Preparando {len(df)} registros para upsert do ano {year}...")
+            logger.info(f"Inserindo {len(df)} registros para o ano {year}...")
             
             # Converter DataFrame para lista de dicionários
-            # Substituir NaN/NaT por None explicitamente
             data = []
             for _, row in df.iterrows():
                 row_dict = {}
                 for col in df.columns:
                     value = row[col]
-                    # Verificar se é um valor nulo do pandas
                     if pd.isna(value):
                         row_dict[col] = None
                     else:
                         row_dict[col] = value
                 data.append(row_dict)
             
-            # Query de UPSERT otimizada
-            upsert_query = """
-            INSERT INTO financial_data (
-                "CNPJ_CIA", "DT_REFER", "VERSAO", "DENOM_CIA", "CD_CVM", 
-                "GRUPO_DFP", "MOEDA", "ESCALA_MOEDA", "ORDEM_EXERC", "DT_FIM_EXERC",
-                "CD_CONTA", "DS_CONTA", "VL_CONTA", "ST_CONTA_FIXA", "DT_INI_EXERC", "COLUNA_DF"
-            ) VALUES (
-                %(CNPJ_CIA)s, %(DT_REFER)s, %(VERSAO)s, %(DENOM_CIA)s, %(CD_CVM)s,
-                %(GRUPO_DFP)s, %(MOEDA)s, %(ESCALA_MOEDA)s, %(ORDEM_EXERC)s, %(DT_FIM_EXERC)s,
-                %(CD_CONTA)s, %(DS_CONTA)s, %(VL_CONTA)s, %(ST_CONTA_FIXA)s, %(DT_INI_EXERC)s, %(COLUNA_DF)s
-            )
-            ON CONFLICT ("CD_CVM", "DT_REFER", "CD_CONTA") 
-            DO UPDATE SET
-                "VL_CONTA" = EXCLUDED."VL_CONTA",
-                "DS_CONTA" = EXCLUDED."DS_CONTA",
-                "ST_CONTA_FIXA" = EXCLUDED."ST_CONTA_FIXA",
-                "GRUPO_DFP" = EXCLUDED."GRUPO_DFP"
-            """
+            # Inserir em lotes usando SQLAlchemy Core
+            table = self.db.financial_table
+            chunks = [data[i:i + Config.BATCH_SIZE] 
+                      for i in range(0, len(data), Config.BATCH_SIZE)]
             
-            # Executar em lotes usando execute_batch para melhor performance
-            with self.db.engine.connect().connection.cursor() as cursor:
-                execute_batch(cursor, upsert_query, data, page_size=Config.BATCH_SIZE)
-                self.db.engine.connect().connection.commit()
+            with self.db.engine.begin() as conn:
+                for i, chunk in enumerate(chunks):
+                    # Usar inserção com ON CONFLICT UPDATE
+                    stmt = table.insert().values(chunk).on_conflict_do_update(
+                        index_elements=['CD_CVM', 'DT_REFER', 'CD_CONTA'],
+                        set_={
+                            'VL_CONTA': table.excluded.VL_CONTA,
+                            'DS_CONTA': table.excluded.DS_CONTA,
+                            'ST_CONTA_FIXA': table.excluded.ST_CONTA_FIXA,
+                            'GRUPO_DFP': table.excluded.GRUPO_DFP
+                        }
+                    )
+                    conn.execute(stmt)
+                    logger.info(f"Lote {i+1}/{len(chunks)} inserido.")
             
-            logger.info(f"✅ Dados do ano {year} upserted com sucesso")
+            logger.info(f"✅ Dados do ano {year} inseridos com sucesso")
             
         except Exception as e:
-            logger.error(f"❌ Erro durante upsert para o ano {year}: {e}", exc_info=True)
+            logger.error(f"❌ Erro durante inserção para o ano {year}: {e}", exc_info=True)
             raise
 
 def main():
