@@ -303,14 +303,13 @@ def run_full_valuation_analysis(ticker_map: pd.DataFrame) -> List[Dict[str, Any]
     # Carregar dados financeiros do banco de dados
     logger.info("Carregando dados financeiros do banco de dados...")
     with engine.connect() as connection:
-        cols = ["cd_cvm", "cd_conta", "vl_conta", "dt_refer", "denom_cia", "ordem_exerc"]
-        df_full_data = pd.read_sql(
-            text(f'SELECT {",".join(cols)} FROM financial_data'),
-            connection
-        )
+        # Usar nomes exatos das colunas como estão no banco (com aspas e maiúsculas)
+        query = text('''
+            SELECT "CD_CVM", "CD_CONTA", "VL_CONTA", "DT_REFER", "DENOM_CIA", "ORDEM_EXERC" 
+            FROM financial_data
+        ''')
+        df_full_data = pd.read_sql(query, connection)
     
-    # Converter nomes de colunas para maiúsculas para compatibilidade
-    df_full_data.columns = [col.upper() for col in df_full_data.columns]
     logger.info(f"Dados financeiros carregados: {len(df_full_data)} registros")
     
     market_data = obter_dados_mercado()
