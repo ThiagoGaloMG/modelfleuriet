@@ -197,14 +197,18 @@ def get_companies_list(engine, ticker_mapping_df):
             query = text('SELECT DISTINCT "DENOM_CIA" AS nome_empresa, "CD_CVM" AS cd_cvm FROM financial_data ORDER BY "DENOM_CIA"')
             df_companies_db = pd.read_sql(query, connection)
             
-            # Merge com tickers
+            # Merge com tickers: seleciona apenas cd_cvm e ticker do mapeamento
             if not ticker_mapping_df.empty:
+                # Seleciona apenas as colunas necessárias
+                ticker_subset = ticker_mapping_df[['cd_cvm', 'ticker']]
+                
                 final_df = pd.merge(
                     df_companies_db,
-                    ticker_mapping_df,
+                    ticker_subset,
                     on='cd_cvm',
                     how='left'
                 )
+                # Preenche tickers faltantes com o nome da empresa do banco
                 final_df['ticker'] = final_df['ticker'].fillna(final_df['nome_empresa'])
             else:
                 final_df = df_companies_db
@@ -295,7 +299,8 @@ def run_valuation_worker_if_needed(engine):
                 )
             
             if not df_full_data.empty:
-                valuation_results = run_full_valuation_analysis(df_full_data, df_tickers)
+                # A função foi modificada para receber apenas um argumento
+                valuation_results = run_full_valuation_analysis(df_full_data)
                 
                 if valuation_results:
                     df_results = pd.DataFrame(valuation_results)
@@ -315,7 +320,6 @@ def run_valuation_worker_if_needed(engine):
                 
     except Exception as e:
         logger.error(f"[ERRO] Erro ao executar worker de valuation: {e}", exc_info=True)
-
 # Inicialização segura
 try:
     db_engine = create_db_engine()
