@@ -399,7 +399,7 @@ def index():
             )
 
         # Adicionar ticker aos resultados
-        ticker = next((c['TICKER'] for c in companies_list if c['cd_cvm'] == cvm_code), 'N/A')
+        ticker = next((c['ticker'] for c in companies_list if c['cd_cvm'] == cvm_code), 'N/A')
         fleuriet_results['ticker'] = ticker
 
         return render_template(
