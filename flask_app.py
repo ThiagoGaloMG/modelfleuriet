@@ -121,21 +121,21 @@ def load_ticker_mapping(file_path=None):
         df_tickers = pd.read_csv(
             file_path, 
             sep=',',
-            dtype={'CD_CVM': str}
+            dtype={'cd_cvm': str}
         )
         # Padroniza nomes de colunas
         df_tickers.columns = [col.strip().lower() for col in df_tickers.columns]
         
-        # Converte e valida CD_CVM
-        df_tickers['CD_CVM'] = pd.to_numeric(df_tickers['CD_CVM'], errors='coerce')
-        df_tickers = df_tickers.dropna(subset=['CD_CVM'])
-        df_tickers['CD_CVM'] = df_tickers['CD_CVM'].astype(int)
+        # Converte e valida cd_cvm
+        df_tickers['cd_cvm'] = pd.to_numeric(df_tickers['cd_cvm'], errors='coerce')
+        df_tickers = df_tickers.dropna(subset=['cd_cvm'])
+        df_tickers['cd_cvm'] = df_tickers['cd_cvm'].astype(int)
         
         # Remove duplicatas
-        df_tickers = df_tickers.drop_duplicates(subset=['CD_CVM'], keep='first')
+        df_tickers = df_tickers.drop_duplicates(subset=['cd_cvm'], keep='first')
         
         logger.info(f"[OK] {len(df_tickers)} mapeamentos carregados.")
-        return df_tickers[['CD_CVM', 'TICKER', 'NOME_EMPRESA']]
+        return df_tickers[['cd_cvm', 'TICKER', 'NOME_EMPRESA']]
     except Exception as e:
         logger.error(f"[ERRO] Erro ao carregar mapeamento: {e}", exc_info=True)
         return pd.DataFrame()
@@ -150,7 +150,7 @@ def get_companies_list(engine, ticker_mapping_df):
     try:
         with engine.connect() as connection:
             # Garantir que os nomes das colunas estão corretos
-            query = text('SELECT DISTINCT "DENOM_CIA" as nome_empresa, "CD_CVM" FROM financial_data ORDER BY "DENOM_CIA"')
+            query = text('SELECT DISTINCT "DENOM_CIA" as nome_empresa, "cd_cvm" FROM financial_data ORDER BY "DENOM_CIA"')
             df_companies_db = pd.read_sql(query, connection)
         
         logger.info(f"Empresas encontradas no banco: {len(df_companies_db)}")
@@ -160,7 +160,7 @@ def get_companies_list(engine, ticker_mapping_df):
             final_df = pd.merge(
                 df_companies_db,
                 ticker_mapping_df,
-                on='CD_CVM',
+                on='cd_cvm',
                 how='left'
             )
             # Preenche tickers faltantes com o nome da empresa
@@ -169,7 +169,7 @@ def get_companies_list(engine, ticker_mapping_df):
             final_df = df_companies_db
             final_df['TICKER'] = final_df['nome_empresa']
         
-        return final_df[['CD_CVM', 'TICKER', 'nome_empresa']].drop_duplicates().to_dict(orient='records')
+        return final_df[['cd_cvm', 'TICKER', 'nome_empresa']].drop_duplicates().to_dict(orient='records')
         
     except Exception as e:
         logger.error(f"[ERRO] Erro ao buscar lista de empresas: {e}", exc_info=True)
@@ -333,11 +333,11 @@ def index():
 
         years_to_analyze = list(range(start_year, end_year + 1))
 
-        # Busca dados da empresa (usando CD_CVM conforme estrutura)
+        # Busca dados da empresa (usando cd_cvm conforme estrutura)
         try:
             with db_engine.connect() as connection:
                 # CORREÇÃO: usar nome de coluna em minúsculas
-                query = text('SELECT * FROM financial_data WHERE "cd_cvm" = :cvm_code')
+                query = text('SELECT * FROM financial_data WHERE cd_cvm = :cvm_code')
                 df_company = pd.read_sql(query, connection, params={'cvm_code': cvm_code})
         except Exception as e:
             logger.error(f"Erro ao buscar dados da empresa: {e}")
@@ -365,7 +365,7 @@ def index():
             )
 
         # Adicionar ticker aos resultados
-        ticker = next((c['TICKER'] for c in companies_list if c['CD_CVM'] == cvm_code), 'N/A')
+        ticker = next((c['TICKER'] for c in companies_list if c['cd_cvm'] == cvm_code), 'N/A')
         fleuriet_results['ticker'] = ticker
 
         return render_template(
