@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import pandas as pd
 import zipfile
 import os
@@ -40,23 +41,23 @@ class DatabaseManager:
         self.metadata = MetaData()
         self.financial_table = Table(
             Config.TABLE_NAME, self.metadata,
-            Column('CNPJ_CIA', String(20)),
-            Column('DT_REFER', Date),
-            Column('VERSAO', Integer),
-            Column('DENOM_CIA', String(255)),
-            Column('CD_CVM', Integer),
-            Column('GRUPO_DFP', String(255)),
-            Column('MOEDA', String(10)),
-            Column('ESCALA_MOEDA', String(20)),
-            Column('ORDEM_EXERC', String(20)),
-            Column('DT_FIM_EXERC', Date),
-            Column('CD_CONTA', String(50)),
-            Column('DS_CONTA', Text),
-            Column('VL_CONTA', Numeric(20, 2)),
-            Column('ST_CONTA_FIXA', String(10)),
-            Column('DT_INI_EXERC', Date),
-            Column('COLUNA_DF', String(50)),
-            PrimaryKeyConstraint('CD_CVM', 'DT_REFER', 'CD_CONTA')
+            Column('cnpj_cia', String(20)),
+            Column('dt_refer', Date),
+            Column('versao', Integer),
+            Column('denom_cia', String(255)),
+            Column('cd_cvm', Integer),
+            Column('grupo_dfp', String(255)),
+            Column('moeda', String(10)),
+            Column('escala_moeda', String(20)),
+            Column('ordem_exerc', String(20)),
+            Column('dt_fim_exerc', Date),
+            Column('cd_conta', String(50)),
+            Column('ds_conta', Text),
+            Column('vl_conta', Numeric(20, 2)),
+            Column('st_conta_fixa', String(10)),
+            Column('dt_ini_exerc', Date),
+            Column('coluna_df', String(50)),
+            PrimaryKeyConstraint('cd_cvm', 'dt_refer', 'cd_conta')
         )
 
     def _create_engine(self):
@@ -118,8 +119,11 @@ class DatabaseManager:
 class DataProcessor:
     @staticmethod
     def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+        # Converter nomes de colunas para minúsculas
+        df.columns = [col.lower() for col in df.columns]
+        
         # Converter colunas de data
-        date_cols = ['DT_REFER', 'DT_FIM_EXERC', 'DT_INI_EXERC']
+        date_cols = ['dt_refer', 'dt_fim_exerc', 'dt_ini_exerc']
         for col in date_cols:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
@@ -127,23 +131,23 @@ class DataProcessor:
                 df[col] = df[col].apply(lambda x: None if pd.isna(x) else x)
         
         # Converter colunas numéricas
-        numeric_cols = ['VL_CONTA', 'CD_CVM', 'VERSAO']
+        numeric_cols = ['vl_conta', 'cd_cvm', 'versao']
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         
         # Remover linhas com valores essenciais faltando
-        required_cols = ['CD_CVM', 'DT_REFER', 'CD_CONTA', 'VL_CONTA']
+        required_cols = ['cd_cvm', 'dt_refer', 'cd_conta', 'vl_conta']
         df.dropna(subset=[c for c in required_cols if c in df.columns], inplace=True)
         
         # Garantir tipos de dados corretos
-        if 'CD_CVM' in df.columns:
-            df['CD_CVM'] = df['CD_CVM'].astype(int)
-        if 'CD_CONTA' in df.columns:
-            df['CD_CONTA'] = df['CD_CONTA'].astype(str)
+        if 'cd_cvm' in df.columns:
+            df['cd_cvm'] = df['cd_cvm'].astype(int)
+        if 'cd_conta' in df.columns:
+            df['cd_conta'] = df['cd_conta'].astype(str)
         
         # Remover duplicatas baseadas na chave primária
-        df.drop_duplicates(subset=['CD_CVM', 'DT_REFER', 'CD_CONTA'], keep='last', inplace=True)
+        df.drop_duplicates(subset=['cd_cvm', 'dt_refer', 'cd_conta'], keep='last', inplace=True)
         
         return df
 
@@ -165,8 +169,10 @@ class DataLoader:
                             df = pd.read_csv(
                                 f, sep=';', encoding='latin1', decimal=',',
                                 low_memory=False,
-                                dtype={'CD_CONTA': str, 'CNPJ_CIA': str}
+                                dtype={'cd_conta': str, 'cnpj_cia': str}
                             )
+                            # Converter nomes de colunas para minúsculas
+                            df.columns = [col.lower() for col in df.columns]
                             all_data.append(df)
                     except Exception as e:
                         logger.error(f"Erro ao ler {csv_file} do ZIP: {e}")
@@ -253,12 +259,12 @@ class ETLPipeline:
                     # Usar inserção com ON CONFLICT UPDATE (sintaxe PostgreSQL)
                     stmt = insert(table).values(chunk)
                     stmt = stmt.on_conflict_do_update(
-                        index_elements=['CD_CVM', 'DT_REFER', 'CD_CONTA'],
+                        index_elements=['cd_cvm', 'dt_refer', 'cd_conta'],
                         set_={
-                            'VL_CONTA': stmt.excluded.VL_CONTA,
-                            'DS_CONTA': stmt.excluded.DS_CONTA,
-                            'ST_CONTA_FIXA': stmt.excluded.ST_CONTA_FIXA,
-                            'GRUPO_DFP': stmt.excluded.GRUPO_DFP
+                            'vl_conta': stmt.excluded.vl_conta,
+                            'ds_conta': stmt.excluded.ds_conta,
+                            'st_conta_fixa': stmt.excluded.st_conta_fixa,
+                            'grupo_dfp': stmt.excluded.grupo_dfp
                         }
                     )
                     conn.execute(stmt)
