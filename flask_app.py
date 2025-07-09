@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import gc
 import psutil
 from pathlib import Path
+import time  # Adicionado para controle de rate limiting
 
 load_dotenv()
 app = Flask(__name__)
@@ -92,8 +93,8 @@ def create_db_engine():
         engine = create_engine(
             database_url,
             pool_pre_ping=True,
-            pool_size=5,
-            max_overflow=10,
+            pool_size=20,  # Aumentado para melhorar concorrência
+            max_overflow=30,  # Aumentado para melhorar concorrência
             pool_recycle=3600,
             connect_args={
                 "connect_timeout": 30,
@@ -298,8 +299,8 @@ def run_valuation_worker_if_needed(engine):
                     connection
                 )
             
-            if not df_full_data.empty:
-                # A função foi modificada para receber apenas um argumento
+            if not df_full_data.empty and not df_tickers.empty:
+                # Executar análise com dados financeiros e mapeamento de tickers
                 valuation_results = run_full_valuation_analysis(df_full_data, df_tickers)
                 
                 if valuation_results:
@@ -316,10 +317,11 @@ def run_valuation_worker_if_needed(engine):
                 else:
                     logger.warning("Worker não gerou resultados.")
             else:
-                logger.warning("Dados financeiros não encontrados.")
+                logger.warning("Dados financeiros não encontrados ou mapeamento vazio.")
                 
     except Exception as e:
         logger.error(f"[ERRO] Erro ao executar worker de valuation: {e}", exc_info=True)
+
 # Inicialização segura
 try:
     db_engine = create_db_engine()
@@ -332,8 +334,13 @@ try:
         if not inspect(db_engine).has_table('financial_data'):
             logger.error("[ERRO] TABELA FINANCIAL_DATA NÃO ENCONTRADA!")
         
+        # Verifica se deve executar o worker de valuation
         if ensure_valuation_table_exists(db_engine):
-            run_valuation_worker_if_needed(db_engine)
+            # Executar worker apenas se necessário e em ambiente adequado
+            if os.environ.get('RUN_VALUATION_WORKER', 'true').lower() == 'true':
+                run_valuation_worker_if_needed(db_engine)
+            else:
+                logger.info("Execução do worker de valuation desabilitada por configuração")
         else:
             logger.error("Falha ao garantir tabela de valuation.")
     else:
@@ -369,6 +376,7 @@ def health_check():
 def index():
     try:
         if request.method == 'GET':
+            logger.info(f"Renderizando página inicial com {len(companies_list)} empresas")
             return render_template('index.html', companies=companies_list)
 
         # Validação dos parâmetros
@@ -512,6 +520,14 @@ def reload_companies():
             "status": "error",
             "message": str(e)
         }), 500
+
+@app.route('/debug/companies')
+def debug_companies():
+    """Endpoint para debug da lista de empresas"""
+    return jsonify({
+        "count": len(companies_list),
+        "companies": companies_list[:10]  # Retorna apenas as primeiras 10 para exemplo
+    })
 
 @app.route('/debug/table_structure')
 def debug_table_structure():
