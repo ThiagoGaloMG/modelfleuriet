@@ -19,10 +19,16 @@ import gc
 load_dotenv()
 
 class Config:
-    VALID_YEARS = ['2022', '2023', '2024']
+    VALID_YEARS = ['2020', '2021', '2022', '2023', '2024']
     CHUNK_SIZE = 2000
     TABLE_NAME = 'financial_data'
     BATCH_SIZE = 500  # Tamanho do lote para inserção
+
+    TABLE_COLUMNS = [
+        'cnpj_cia', 'dt_refer', 'versao', 'denom_cia', 'cd_cvm', 'grupo_dfp', 
+        'moeda', 'escala_moeda', 'ordem_exerc', 'dt_fim_exerc', 'cd_conta',
+        'ds_conta', 'vl_conta', 'st_conta_fixa', 'dt_ini_exerc', 'coluna_df'
+    ]
 
 def setup_logging():
     logging.basicConfig(
