@@ -62,6 +62,18 @@ def log_memory_usage():
         f"({mem.percent}%)"
     )
 
+def is_db_connected(engine):
+    """Verifica se a conexão com o banco está ativa"""
+    if engine is None:
+        return False
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao verificar conexão com o banco: {e}")
+        return False
+
 def create_db_engine():
     """Cria a engine de conexão com o banco de dados com tratamento de erros"""
     database_url = os.environ.get('DATABASE_URL')
@@ -159,8 +171,8 @@ def load_ticker_mapping(file_path=None):
 
 def get_companies_list(engine, ticker_mapping_df):
     """Obtém lista de empresas com tratamento de erros"""
-    if engine is None or engine.closed:
-        logger.error("Engine do banco não disponível ou conexão fechada")
+    if not is_db_connected(engine):  # Alteração principal aqui
+        logger.error("Conexão com o banco não está ativa")
         return []
     
     logger.info("Buscando lista de empresas do banco...")
@@ -304,9 +316,11 @@ def run_valuation_worker_if_needed(engine):
 try:
     db_engine = create_db_engine()
     df_tickers = load_ticker_mapping()
-    companies_list = get_companies_list(db_engine, df_tickers) if db_engine else []
     
-    if db_engine:
+    if is_db_connected(db_engine):
+        companies_list = get_companies_list(db_engine, df_tickers)
+        logger.info(f"Carregadas {len(companies_list)} empresas")
+        
         if not inspect(db_engine).has_table('financial_data'):
             logger.error("[ERRO] TABELA FINANCIAL_DATA NÃO ENCONTRADA!")
         
@@ -316,6 +330,7 @@ try:
             logger.error("Falha ao garantir tabela de valuation.")
     else:
         logger.error("Falha na conexão com o banco de dados.")
+        companies_list = []
         
 except Exception as e:
     logger.critical(f"[ERRO] Falha na inicialização: {e}", exc_info=True)
