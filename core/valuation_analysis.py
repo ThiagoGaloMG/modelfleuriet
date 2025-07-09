@@ -308,6 +308,8 @@ def run_full_valuation_analysis(ticker_map: pd.DataFrame) -> List[Dict[str, Any]
             SELECT cd_cvm, cd_conta, vl_conta, dt_refer, denom_cia, ordem_exerc 
             FROM financial_data
         ''')
+    df_full_data.columns = [col.lower() for col in df_full_data.columns]
+
         df_full_data = pd.read_sql(query, connection)
     
     logger.info(f"Dados financeiros carregados: {len(df_full_data)} registros")
