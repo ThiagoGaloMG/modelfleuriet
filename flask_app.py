@@ -300,7 +300,7 @@ def run_valuation_worker_if_needed(engine):
             
             if not df_full_data.empty:
                 # A função foi modificada para receber apenas um argumento
-                valuation_results = run_full_valuation_analysis(df_full_data)
+                valuation_results = run_full_valuation_analysis(df_full_data, df_tickers)
                 
                 if valuation_results:
                     df_results = pd.DataFrame(valuation_results)
