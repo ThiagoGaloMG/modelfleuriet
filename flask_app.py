@@ -122,32 +122,33 @@ def load_ticker_mapping(file_path=None):
     
     logger.info(f"Carregando mapeamento de tickers de {file_path}...")
     try:
-        # Verifica se o arquivo existe
         if not os.path.exists(file_path):
             logger.error(f"Arquivo não encontrado: {file_path}")
             return pd.DataFrame()
         
+        # Verifica o cabeçalho primeiro
+        with open(file_path, 'r', encoding='utf-8') as f:
+            header = f.readline().strip().lower().split(',')
+            missing = {'cd_cvm', 'ticker', 'nome_empresa'} - set(header)
+            if missing:
+                logger.error(f"Colunas obrigatórias faltando: {missing}")
+                return pd.DataFrame()
+        
+        # Lê o CSV
         df_tickers = pd.read_csv(
             file_path, 
             sep=',',
-            dtype={'cd_cvm': str}
+            dtype={'cd_cvm': str},
+            encoding='utf-8'
         )
+        
         # Padroniza nomes de colunas
         df_tickers.columns = [col.strip().lower() for col in df_tickers.columns]
-
-        # Verifica se as colunas necessárias existem
-        required_columns = {'cd_cvm', 'ticker', 'nome_empresa'}
-        if not required_columns.issubset(df_tickers.columns):
-            missing = required_columns - set(df_tickers.columns)
-            logger.error(f"Colunas obrigatórias faltando: {missing}")
-            return pd.DataFrame()
         
-        # Converte e valida cd_cvm
+        # Processamento dos dados
         df_tickers['cd_cvm'] = pd.to_numeric(df_tickers['cd_cvm'], errors='coerce')
         df_tickers = df_tickers.dropna(subset=['cd_cvm'])
         df_tickers['cd_cvm'] = df_tickers['cd_cvm'].astype(int)
-        
-        # Remove duplicatas
         df_tickers = df_tickers.drop_duplicates(subset=['cd_cvm'], keep='first')
         
         logger.info(f"[OK] {len(df_tickers)} mapeamentos carregados.")
@@ -158,53 +159,49 @@ def load_ticker_mapping(file_path=None):
 
 def get_companies_list(engine, ticker_mapping_df):
     """Obtém lista de empresas com tratamento de erros"""
-    if engine is None: 
-        logger.error("Engine do banco não disponível")
+    if engine is None or engine.closed:
+        logger.error("Engine do banco não disponível ou conexão fechada")
         return []
     
     logger.info("Buscando lista de empresas do banco...")
     try:
         with engine.connect() as connection:
-            # Garantir que os nomes das colunas estão corretos
-            query = text('SELECT DISTINCT denom_cia as nome_empresa, cd_cvm FROM financial_data ORDER BY denom_cia')
-            df_companies_db = pd.read_sql(query, connection)
-            
-            # Verifica se as colunas existem
+            # Verifica estrutura da tabela
             inspector = inspect(engine)
+            if not inspector.has_table('financial_data'):
+                logger.error("Tabela financial_data não existe")
+                return []
+                
             columns = [col['name'] for col in inspector.get_columns('financial_data')]
-            
             if 'denom_cia' not in columns or 'cd_cvm' not in columns:
                 logger.error(f"Colunas necessárias não encontradas. Colunas disponíveis: {columns}")
                 return []
-                
-            # Query adaptativa
-            query = text('SELECT DISTINCT denom_cia AS nome_empresa, cd_cvm FROM financial_data ORDER BY denom_cia')
+            
+            # Executa a query
+            query = text('SELECT DISTINCT denom_cia AS nome_empresa, cd_cvm FROM financial_data ORDER BY nome_empresa')
             df_companies_db = pd.read_sql(query, connection)
             
-        logger.info(f"Empresas encontradas no banco: {len(df_companies_db)}")
-        
-        # Verifica se o merge é necessário
-        if not ticker_mapping_df.empty:
-            final_df = pd.merge(
-                df_companies_db,
-                ticker_mapping_df,
-                on='cd_cvm',
-                how='left'
+            # Merge com tickers
+            if not ticker_mapping_df.empty:
+                final_df = pd.merge(
+                    df_companies_db,
+                    ticker_mapping_df,
+                    on='cd_cvm',
+                    how='left'
+                )
+                final_df['ticker'] = final_df['ticker'].fillna(final_df['nome_empresa'])
+            else:
+                final_df = df_companies_db
+                final_df['ticker'] = final_df['nome_empresa']
+            
+            # Retorna dados tratados
+            cols = ['cd_cvm', 'ticker', 'nome_empresa']
+            return (
+                final_df[cols]
+                .dropna(subset=['cd_cvm'])
+                .drop_duplicates(subset=['cd_cvm'])
+                .to_dict(orient='records')
             )
-            # Preenche tickers faltantes com o nome da empresa
-            final_df['ticker'] = final_df['ticker'].fillna(final_df['nome_empresa'])
-        else:
-            final_df = df_companies_db
-            final_df['ticker'] = final_df['nome_empresa']
-        
-        cols = ['cd_cvm', 'ticker', 'nome_empresa']
-        return (
-            final_df[cols]
-            .dropna(subset=['cd_cvm'])
-            .drop_duplicates(subset=['cd_cvm'])
-            .to_dict(orient='records')
-        )
-        
     except Exception as e:
         logger.error(f"[ERRO] Erro ao buscar lista de empresas: {e}", exc_info=True)
         return []
@@ -370,7 +367,6 @@ def index():
         # Busca dados da empresa (usando cd_cvm conforme estrutura)
         try:
             with db_engine.connect() as connection:
-                # CORREÇÃO: usar nome de coluna em minúsculas
                 query = text('SELECT * FROM financial_data WHERE cd_cvm = :cvm_code')
                 df_company = pd.read_sql(query, connection, params={'cvm_code': cvm_code})
         except Exception as e:
