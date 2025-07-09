@@ -124,7 +124,7 @@ def load_ticker_mapping(file_path=None):
             dtype={'CD_CVM': str}
         )
         # Padroniza nomes de colunas
-        df_tickers.columns = [col.strip().upper() for col in df_tickers.columns]
+        df_tickers.columns = [col.strip().lower() for col in df_tickers.columns]
         
         # Converte e valida CD_CVM
         df_tickers['CD_CVM'] = pd.to_numeric(df_tickers['CD_CVM'], errors='coerce')
