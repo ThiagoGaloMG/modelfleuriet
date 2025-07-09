@@ -100,6 +100,15 @@ def create_db_engine():
             inspector = inspect(engine)
             if not inspector.has_table('financial_data'):
                 logger.error("[ERRO] Tabela 'financial_data' não encontrada no banco")
+                return None
+
+            # Teste adicional: verifica se pode ler a tabela
+            try:
+                conn.execute(text("SELECT 1 FROM financial_data LIMIT 1"))
+                logger.info("[OK] Acesso à tabela financial_data verificado")
+            except Exception as e:
+                logger.error(f"[ERRO] Não foi possível ler a tabela: {str(e)}")
+                return None
             
         return engine
     except Exception as e:
@@ -125,6 +134,13 @@ def load_ticker_mapping(file_path=None):
         )
         # Padroniza nomes de colunas
         df_tickers.columns = [col.strip().lower() for col in df_tickers.columns]
+
+        # Verifica se as colunas necessárias existem
+        required_columns = {'cd_cvm', 'ticker', 'nome_empresa'}
+        if not required_columns.issubset(df_tickers.columns):
+            missing = required_columns - set(df_tickers.columns)
+            logger.error(f"Colunas obrigatórias faltando: {missing}")
+            return pd.DataFrame()
         
         # Converte e valida cd_cvm
         df_tickers['cd_cvm'] = pd.to_numeric(df_tickers['cd_cvm'], errors='coerce')
@@ -135,7 +151,7 @@ def load_ticker_mapping(file_path=None):
         df_tickers = df_tickers.drop_duplicates(subset=['cd_cvm'], keep='first')
         
         logger.info(f"[OK] {len(df_tickers)} mapeamentos carregados.")
-        return df_tickers[['cd_cvm', 'TICKER', 'NOME_EMPRESA']]
+        return df_tickers[['cd_cvm', 'ticker', 'nome_empresa']]
     except Exception as e:
         logger.error(f"[ERRO] Erro ao carregar mapeamento: {e}", exc_info=True)
         return pd.DataFrame()
@@ -152,7 +168,19 @@ def get_companies_list(engine, ticker_mapping_df):
             # Garantir que os nomes das colunas estão corretos
             query = text('SELECT DISTINCT denom_cia as nome_empresa, cd_cvm FROM financial_data ORDER BY denom_cia')
             df_companies_db = pd.read_sql(query, connection)
-        
+            
+            # Verifica se as colunas existem
+            inspector = inspect(engine)
+            columns = [col['name'] for col in inspector.get_columns('financial_data')]
+            
+            if 'denom_cia' not in columns or 'cd_cvm' not in columns:
+                logger.error(f"Colunas necessárias não encontradas. Colunas disponíveis: {columns}")
+                return []
+                
+            # Query adaptativa
+            query = text('SELECT DISTINCT denom_cia AS nome_empresa, cd_cvm FROM financial_data ORDER BY denom_cia')
+            df_companies_db = pd.read_sql(query, connection)
+            
         logger.info(f"Empresas encontradas no banco: {len(df_companies_db)}")
         
         # Verifica se o merge é necessário
@@ -164,12 +192,18 @@ def get_companies_list(engine, ticker_mapping_df):
                 how='left'
             )
             # Preenche tickers faltantes com o nome da empresa
-            final_df['TICKER'] = final_df['TICKER'].fillna(final_df['nome_empresa'])
+            final_df['ticker'] = final_df['ticker'].fillna(final_df['nome_empresa'])
         else:
             final_df = df_companies_db
-            final_df['TICKER'] = final_df['nome_empresa']
+            final_df['ticker'] = final_df['nome_empresa']
         
-        return final_df[['cd_cvm', 'TICKER', 'nome_empresa']].drop_duplicates().to_dict(orient='records')
+        cols = ['cd_cvm', 'ticker', 'nome_empresa']
+        return (
+            final_df[cols]
+            .dropna(subset=['cd_cvm'])
+            .drop_duplicates(subset=['cd_cvm'])
+            .to_dict(orient='records')
+        )
         
     except Exception as e:
         logger.error(f"[ERRO] Erro ao buscar lista de empresas: {e}", exc_info=True)
@@ -459,6 +493,25 @@ def reload_companies():
             "status": "error",
             "message": str(e)
         }), 500
+
+@app.route('/debug/table_structure')
+def debug_table_structure():
+    if db_engine is None:
+        return jsonify({"error": "Database not connected"}), 500
+    
+    inspector = inspect(db_engine)
+    
+    if not inspector.has_table('financial_data'):
+        return jsonify({"error": "Tabela financial_data não existe"}), 404
+    
+    columns = inspector.get_columns('financial_data')
+    column_names = [col['name'] for col in columns]
+    
+    return jsonify({
+        "table_exists": True,
+        "columns": column_names,
+        "column_details": [{"name": col["name"], "type": str(col["type"])} for col in columns]
+    })
 
 @app.route('/debug/columns')
 def debug_columns():
