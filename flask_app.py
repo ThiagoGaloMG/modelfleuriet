@@ -171,7 +171,7 @@ def load_ticker_mapping(file_path=None):
 
 def get_companies_list(engine, ticker_mapping_df):
     """Obtém lista de empresas com tratamento de erros"""
-    if not is_db_connected(engine):  # Alteração principal aqui
+    if not is_db_connected(engine):
         logger.error("Conexão com o banco não está ativa")
         return []
     
@@ -185,12 +185,16 @@ def get_companies_list(engine, ticker_mapping_df):
                 return []
                 
             columns = [col['name'] for col in inspector.get_columns('financial_data')]
-            if 'denom_cia' not in columns or 'cd_cvm' not in columns:
-                logger.error(f"Colunas necessárias não encontradas. Colunas disponíveis: {columns}")
+            
+            # Verifica se as colunas necessárias existem (com nomes corretos)
+            required_columns = {'DENOM_CIA', 'CD_CVM'}  # Nomes em maiúsculas conforme banco
+            if not required_columns.issubset(columns):
+                missing = required_columns - set(columns)
+                logger.error(f"Colunas obrigatórias faltando: {missing}")
                 return []
             
-            # Executa a query
-            query = text('SELECT DISTINCT denom_cia AS nome_empresa, cd_cvm FROM financial_data ORDER BY nome_empresa')
+            # Executa a query com os nomes corretos das colunas
+            query = text('SELECT DISTINCT "DENOM_CIA" AS nome_empresa, "CD_CVM" AS cd_cvm FROM financial_data ORDER BY "DENOM_CIA"')
             df_companies_db = pd.read_sql(query, connection)
             
             # Merge com tickers
