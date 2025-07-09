@@ -12,6 +12,8 @@ from datetime import datetime
 from typing import Dict, List, Any
 import gc
 import psutil
+import os
+from sqlalchemy import create_engine, text
 
 # --- Configuração Básica ---
 warnings.filterwarnings("ignore")
@@ -43,6 +45,12 @@ VALUATION_CONFIG = {
     "MAX_RETRIES": 3,
     "TIMEOUT": 15
 }
+
+# --- Conexão com Banco de Dados ---
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("Variável de ambiente DATABASE_URL não definida")
+engine = create_engine(DATABASE_URL)
 
 # --- Funções de Lógica de Negócio e Cálculos ---
 
@@ -283,13 +291,27 @@ def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market
         logger.error(f"Erro ao processar valuation para {ticker_sa}: {e}", exc_info=True)
         return None
 
-def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataFrame) -> List[Dict[str, Any]]:
+def run_full_valuation_analysis(ticker_map: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     Função principal que orquestra a análise de valuation para todas as empresas.
+    Carrega dados financeiros diretamente do banco de dados.
     """
     logger.info(">>>>>> INICIANDO ANÁLISE DE VALUATION PARA TODAS AS EMPRESAS <<<<<<")
     process = psutil.Process()
     logger.info(f"Memória inicial: {process.memory_info().rss / (1024 * 1024):.2f} MB")
+    
+    # Carregar dados financeiros do banco de dados
+    logger.info("Carregando dados financeiros do banco de dados...")
+    with engine.connect() as connection:
+        cols = ["cd_cvm", "cd_conta", "vl_conta", "dt_refer", "denom_cia", "ordem_exerc"]
+        df_full_data = pd.read_sql(
+            text(f'SELECT {",".join(cols)} FROM financial_data'),
+            connection
+        )
+    
+    # Converter nomes de colunas para maiúsculas para compatibilidade
+    df_full_data.columns = [col.upper() for col in df_full_data.columns]
+    logger.info(f"Dados financeiros carregados: {len(df_full_data)} registros")
     
     market_data = obter_dados_mercado()
     resultados_brutos = []
@@ -306,11 +328,15 @@ def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataF
         df_empresa_atual = df_full_data[df_full_data["CD_CVM"] == codigo_cvm].copy()
         
         if df_empresa_atual.empty:
+            logger.warning(f"Nenhum dado financeiro encontrado para {ticker} (CVM: {codigo_cvm})")
             continue
 
         resultado = processar_valuation_empresa(f"{ticker.upper()}.SA", df_empresa_atual, market_data)
         if resultado:
             resultados_brutos.append(resultado)
+            logger.info(f"Valuation calculado para {ticker}: Upside {resultado['Upside']:.2%}")
+        else:
+            logger.warning(f"Falha no cálculo de valuation para {ticker}")
             
         # Liberar memória periodicamente
         if len(resultados_brutos) % 10 == 0:
