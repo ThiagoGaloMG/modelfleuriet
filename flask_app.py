@@ -38,6 +38,22 @@ class CustomJSONProvider(DefaultJSONProvider):
 
 app.json = CustomJSONProvider(app)
 
+# Filtros Jinja2 para formatação
+def format_currency(value):
+    try:
+        return f"R$ {float(value):,.2f}"
+    except (ValueError, TypeError):
+        return "N/D"
+
+def format_percentage(value):
+    try:
+        return f"{float(value)*100:.2f}%"
+    except (ValueError, TypeError):
+        return "N/D"
+
+app.jinja_env.filters['format_currency'] = format_currency
+app.jinja_env.filters['format_percentage'] = format_percentage
+
 def log_memory_usage():
     """Registra o uso atual de memória"""
     mem = psutil.virtual_memory()
@@ -320,7 +336,8 @@ def index():
         # Busca dados da empresa (usando CD_CVM conforme estrutura)
         try:
             with db_engine.connect() as connection:
-                query = text('SELECT * FROM financial_data WHERE "CD_CVM" = :cvm_code')
+                # CORREÇÃO: usar nome de coluna em minúsculas
+                query = text('SELECT * FROM financial_data WHERE "cd_cvm" = :cvm_code')
                 df_company = pd.read_sql(query, connection, params={'cvm_code': cvm_code})
         except Exception as e:
             logger.error(f"Erro ao buscar dados da empresa: {e}")
@@ -346,6 +363,10 @@ def index():
                 companies=companies_list, 
                 error=fleuriet_error
             )
+
+        # Adicionar ticker aos resultados
+        ticker = next((c['TICKER'] for c in companies_list if c['CD_CVM'] == cvm_code), 'N/A')
+        fleuriet_results['ticker'] = ticker
 
         return render_template(
             'index.html', 
