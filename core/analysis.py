@@ -176,6 +176,7 @@ def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List
     all_results = []
     company_name = company_df['DENOM_CIA'].iloc[0] if not company_df.empty else f"Empresa CVM {cvm_code}"
     company_df['DT_REFER'] = pd.to_datetime(company_df['DT_REFER'])
+    company_df.columns = [col.lower() for col in company_df.columns]
     
     # Novas variáveis para cálculo de porcentagens
     total_ncg = 0.0
