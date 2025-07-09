@@ -15,7 +15,7 @@ import psutil
 import os
 import time  # Importação adicionada para controle de rate limiting
 import random  # Importação adicionada para randomização de delays
-
+from sqlalchemy import create_engine
 # --- Configuração Básica ---
 warnings.filterwarnings("ignore")
 logging.basicConfig(
