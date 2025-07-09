@@ -150,7 +150,7 @@ def load_financial_data(engine):
         return pd.DataFrame()
     
     # Query com nomes de colunas exatos
-    query = text('SELECT "CD_CVM", "CD_CONTA", "VL_CONTA", "DT_REFER", "DENOM_CIA" FROM financial_data')
+    query = text('SELECT cd_cvm, cd_conta, vl_conta, dt_refer, denom_cia FROM financial_data')
     
     for attempt in range(MAX_RETRIES):
         try:
