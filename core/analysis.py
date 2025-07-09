@@ -173,10 +173,11 @@ def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> T
 
 def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List[int]) -> Tuple[Dict, str]:
     """Orquestra a análise completa do Modelo Fleuriet para uma empresa ao longo de vários anos."""
-    all_results = []
-    company_name = company_df['DENOM_CIA'].iloc[0] if not company_df.empty else f"Empresa CVM {cvm_code}"
-    company_df['DT_REFER'] = pd.to_datetime(company_df['DT_REFER'])
     company_df.columns = [col.lower() for col in company_df.columns]
+    
+    all_results = []
+    company_name = company_df['denom_cia'].iloc[0] if not company_df.empty else f"Empresa CVM {cvm_code}"
+    company_df['dt_refer'] = pd.to_datetime(company_df['dt_refer'])
     
     # Novas variáveis para cálculo de porcentagens
     total_ncg = 0.0
@@ -186,7 +187,7 @@ def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List
 
     for year in sorted(years):
         reference_date = pd.to_datetime(f"{year}-12-31")
-        df_year = company_df[company_df['DT_REFER'] == reference_date].copy()
+        df_year = company_df[company_df['dt_refer'] == reference_date].copy()
         
         if df_year.empty:
             logger.warning(f"Nenhum dado encontrado para o ano {year} para a empresa CVM {cvm_code}.")
