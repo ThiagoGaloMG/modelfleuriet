@@ -176,6 +176,12 @@ def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List
     all_results = []
     company_name = company_df['DENOM_CIA'].iloc[0] if not company_df.empty else f"Empresa CVM {cvm_code}"
     company_df['DT_REFER'] = pd.to_datetime(company_df['DT_REFER'])
+    
+    # Novas variáveis para cálculo de porcentagens
+    total_ncg = 0.0
+    total_cdg = 0.0
+    total_t = 0.0
+    count = 0
 
     for year in sorted(years):
         reference_date = pd.to_datetime(f"{year}-12-31")
@@ -193,6 +199,14 @@ def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List
             
             advanced_indicators['Z_Score'] = z_score
             advanced_indicators['Z_Risk'] = z_risk
+            
+            # Coletar dados para porcentagens
+            total_assets = reclassified_data.get('Ativo_Total')
+            if total_assets and total_assets > 0:
+                total_ncg += base_indicators['NCG'] / total_assets
+                total_cdg += base_indicators['CDG'] / total_assets
+                total_t += base_indicators['T'] / total_assets
+                count += 1
             
             all_results.append({
                 'year': year,
@@ -214,11 +228,20 @@ def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List
         't': [res['base_indicators']['T'] for res in all_results],
     }
     
+    # Calcular porcentagens médias
+    ncg_percentage = total_ncg / count if count > 0 else 0.0
+    cdg_percentage = total_cdg / count if count > 0 else 0.0
+    t_percentage = total_t / count if count > 0 else 0.0
+    
     final_result = {
         'company_name': company_name,
         'cvm_code': cvm_code,
         'yearly_results': all_results,
-        'chart_data': chart_data
+        'chart_data': chart_data,
+        'financial_status': all_results[-1]['structure'] if all_results else "N/D",
+        'ncg_percentage': ncg_percentage,
+        'cdg_percentage': cdg_percentage,
+        't_percentage': t_percentage
     }
 
     return final_result, None
