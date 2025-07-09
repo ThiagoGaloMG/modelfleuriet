@@ -291,62 +291,79 @@ def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market
         logger.error(f"Erro ao processar valuation para {ticker_sa}: {e}", exc_info=True)
         return None
 
-def run_full_valuation_analysis(ticker_map: pd.DataFrame) -> List[Dict[str, Any]]:
+def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     Função principal que orquestra a análise de valuation para todas as empresas.
-    Carrega dados financeiros diretamente do banco de dados.
+    Recebe os dados financeiros e o mapa de tickers como parâmetros.
     """
     logger.info(">>>>>> INICIANDO ANÁLISE DE VALUATION PARA TODAS AS EMPRESAS <<<<<<")
     process = psutil.Process()
     logger.info(f"Memória inicial: {process.memory_info().rss / (1024 * 1024):.2f} MB")
     
-    # Carregar dados financeiros do banco de dados
-    logger.info("Carregando dados financeiros do banco de dados...")
-    with engine.connect() as connection:
-        # Usar nomes exatos das colunas como estão no banco (com aspas e maiúsculas)
-        query = text('''
-            SELECT cd_cvm, cd_conta, vl_conta, dt_refer, denom_cia, ordem_exerc 
-            FROM financial_data
-        ''')
-    
-
-        df_full_data = pd.read_sql(query, connection)
+    # Normalizar nomes de colunas para minúsculas
     df_full_data.columns = [col.lower() for col in df_full_data.columns]
-    logger.info(f"Dados financeiros carregados: {len(df_full_data)} registros")
+    ticker_map.columns = [col.lower() for col in ticker_map.columns]
     
+    # Converter cd_cvm para int em ambos os DataFrames para compatibilidade
+    df_full_data['cd_cvm'] = pd.to_numeric(df_full_data['cd_cvm'], errors='coerce').astype('Int64')
+    ticker_map['cd_cvm'] = pd.to_numeric(ticker_map['cd_cvm'], errors='coerce').astype('Int64')
+    
+    logger.info(f"Dados financeiros recebidos: {len(df_full_data)} registros")
+    logger.info(f"Tickers mapeados: {len(ticker_map)} empresas")
+    
+    # Obter dados de mercado uma única vez
     market_data = obter_dados_mercado()
     resultados_brutos = []
     
     # Itera sobre o mapa de tickers
-    for _, row in ticker_map.drop_duplicates(subset=['TICKER']).iterrows():
-        ticker = row['TICKER']
-        codigo_cvm = row['CD_CVM']
+    for _, row in ticker_map.iterrows():
+        ticker = row['ticker']
+        codigo_cvm = row['cd_cvm']
+        nome_empresa = row['nome_empresa']
         
+        # Pular empresas na lista de exclusão
         if ticker in VALUATION_CONFIG["EMPRESAS_EXCLUIDAS"]:
+            logger.info(f"Pulando empresa excluída: {ticker}")
             continue
         
-        # Filtra o DataFrame completo para a empresa atual
-        df_empresa_atual = df_full_data[df_full_data["CD_CVM"] == codigo_cvm].copy()
+        # Filtra os dados para a empresa atual
+        df_empresa_atual = df_full_data[df_full_data["cd_cvm"] == codigo_cvm].copy()
         
         if df_empresa_atual.empty:
             logger.warning(f"Nenhum dado financeiro encontrado para {ticker} (CVM: {codigo_cvm})")
             continue
 
-        resultado = processar_valuation_empresa(f"{ticker.upper()}.SA", df_empresa_atual, market_data)
-        if resultado:
-            resultados_brutos.append(resultado)
-            logger.info(f"Valuation calculado para {ticker}: Upside {resultado['Upside']:.2%}")
-        else:
-            logger.warning(f"Falha no cálculo de valuation para {ticker}")
+        try:
+            logger.info(f"Processando valuation para {ticker} ({nome_empresa})")
+            resultado = processar_valuation_empresa(
+                f"{ticker.upper()}.SA", 
+                df_empresa_atual, 
+                market_data
+            )
             
-        # Liberar memória periodicamente
-        if len(resultados_brutos) % 10 == 0:
+            if resultado:
+                # Adicionar informações básicas da empresa
+                resultado['ticker'] = ticker
+                resultado['nome'] = nome_empresa
+                resultado['cd_cvm'] = int(codigo_cvm)
+                
+                resultados_brutos.append(resultado)
+                logger.info(f"Valuation calculado para {ticker}: Upside {resultado.get('upside', 0):.2%}")
+            else:
+                logger.warning(f"Falha no cálculo de valuation para {ticker}")
+                
+        except Exception as e:
+            logger.error(f"Erro ao processar {ticker}: {str(e)}", exc_info=True)
+        
+        # Liberar memória a cada 5 empresas
+        if len(resultados_brutos) % 5 == 0:
             gc.collect()
+            logger.info(f"Memória intermediária: {process.memory_info().rss / (1024 * 1024):.2f} MB")
     
     # Filtro final de sanidade
     resultados_filtrados = [
         r for r in resultados_brutos 
-        if r and 0.01 < r.get('WACC', 1) < 0.40 and -0.99 < r.get('Upside', 0) < 10.0
+        if r and 0.01 < r.get('wacc', 1) < 0.40 and -0.99 < r.get('upside', 0) < 10.0
     ]
 
     total_calculado = len(resultados_brutos)
