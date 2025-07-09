@@ -13,7 +13,8 @@ from typing import Dict, List, Any
 import gc
 import psutil
 import os
-from sqlalchemy import create_engine, text
+import time  # Importação adicionada para controle de rate limiting
+import random  # Importação adicionada para randomização de delays
 
 # --- Configuração Básica ---
 warnings.filterwarnings("ignore")
@@ -43,7 +44,10 @@ VALUATION_CONFIG = {
     },
     "EMPRESAS_EXCLUIDAS": ['ITUB4', 'BBDC4', 'BBAS3', 'SANB11', 'B3SA3'],
     "MAX_RETRIES": 3,
-    "TIMEOUT": 15
+    "TIMEOUT": 15,
+    "REQUEST_DELAY": 1.5,  # Delay padrão entre requisições
+    "MAX_DELAY": 60,       # Delay máximo para backoff exponencial
+    "MIN_DELAY": 0.5       # Delay mínimo para backoff exponencial
 }
 
 # --- Conexão com Banco de Dados ---
@@ -58,7 +62,7 @@ engine = create_engine(DATABASE_URL)
 def obter_dados_mercado() -> Dict[str, Any]:
     """Obtém premissas de mercado (taxa livre de risco, prêmio) e dados do IBOV para cálculo do Beta."""
     dados = {
-        "risk_free_rate": 0.105, 
+        "risk_free_rate": 0.15, 
         "premio_risco_mercado": 0.08, 
         "cresc_perpetuo": 0.03,
         "ibov_data": pd.DataFrame()
@@ -122,56 +126,88 @@ def obter_historico_metrica(df_empresa: pd.DataFrame, codigo_conta: str) -> pd.S
         return pd.Series(dtype=float)
 
 def calcular_beta(ticker: str, ibov_data: pd.DataFrame) -> float:
-    """Calcula o beta ajustado de uma ação em relação ao IBOV."""
+    """Calcula o beta ajustado de uma ação em relação ao IBOV com tratamento de rate limiting."""
     if ibov_data.empty: 
         return 1.0
     
     try:
-        dados_acao = yf.download(
-            ticker, 
-            period=VALUATION_CONFIG["PERIODO_BETA_IBOV"], 
-            progress=False, 
-            timeout=VALUATION_CONFIG["TIMEOUT"]
-        )
-        
-        if dados_acao.empty or len(dados_acao) < 60: 
-            return 1.0
-        
-        dados_combinados = pd.concat(
-            [dados_acao["Adj Close"], ibov_data["Adj Close"]], 
-            axis=1
-        ).dropna()
-        dados_combinados.columns = ['Acao', 'Ibov']
-        
-        retornos = dados_combinados.pct_change().dropna()
-        if len(retornos) < 50: 
-            return 1.0
-        
-        slope, _, _, _, _ = stats.linregress(retornos['Ibov'], retornos['Acao'])
-        beta_ajustado = 0.67 * slope + 0.33 * 1.0
-        return max(0.1, min(beta_ajustado, 2.5))  # Limites razoáveis para beta
+        # Implementação de backoff exponencial para rate limiting
+        for attempt in range(VALUATION_CONFIG["MAX_RETRIES"]):
+            try:
+                dados_acao = yf.download(
+                    ticker, 
+                    period=VALUATION_CONFIG["PERIODO_BETA_IBOV"], 
+                    progress=False, 
+                    timeout=VALUATION_CONFIG["TIMEOUT"]
+                )
+                
+                if dados_acao.empty or len(dados_acao) < 60: 
+                    return 1.0
+                
+                dados_combinados = pd.concat(
+                    [dados_acao["Adj Close"], ibov_data["Adj Close"]], 
+                    axis=1
+                ).dropna()
+                dados_combinados.columns = ['Acao', 'Ibov']
+                
+                retornos = dados_combinados.pct_change().dropna()
+                if len(retornos) < 50: 
+                    return 1.0
+                
+                slope, _, _, _, _ = stats.linregress(retornos['Ibov'], retornos['Acao'])
+                beta_ajustado = 0.67 * slope + 0.33 * 1.0
+                return max(0.1, min(beta_ajustado, 2.5))  # Limites razoáveis para beta
+            
+            except Exception as e:
+                if "429" in str(e):  # Tratamento específico para rate limiting
+                    wait_time = min(
+                        VALUATION_CONFIG["MAX_DELAY"],
+                        VALUATION_CONFIG["MIN_DELAY"] * (2 ** attempt) + random.uniform(0, 1)
+                    )
+                    logger.warning(f"Rate limit atingido para {ticker}. Tentativa {attempt+1}. Aguardando {wait_time:.1f}s")
+                    time.sleep(wait_time)
+                else:
+                    logger.warning(f"Erro ao calcular beta para {ticker}: {e}")
+                    if attempt == VALUATION_CONFIG["MAX_RETRIES"] - 1:
+                        return 1.0
     except Exception as e:
-        logger.warning(f"Erro ao calcular beta para {ticker}: {e}")
+        logger.warning(f"Erro geral ao calcular beta para {ticker}: {e}")
         return 1.0
 
 def obter_info_yfinance(ticker_sa: str) -> Dict[str, Any]:
-    """Obtém informações do yfinance com tratamento de erros."""
+    """Obtém informações do yfinance com tratamento de rate limiting e retry."""
     info = {}
-    try:
-        ticker = yf.Ticker(ticker_sa)
-        info = ticker.info
-        if not info:
-            # Tentar obter informações básicas se o info estiver vazio
-            hist = ticker.history(period="1d")
-            if not hist.empty:
-                info = {
-                    "marketCap": hist["Close"].iloc[-1] * ticker.info.get("sharesOutstanding", 0),
-                    "currentPrice": hist["Close"].iloc[-1],
-                    "previousClose": hist["Close"].iloc[-1],
-                    "sharesOutstanding": ticker.info.get("sharesOutstanding", 0)
-                }
-    except Exception as e:
-        logger.warning(f"Erro ao obter info do yfinance para {ticker_sa}: {e}")
+    
+    # Implementação de backoff exponencial para rate limiting
+    for attempt in range(VALUATION_CONFIG["MAX_RETRIES"]):
+        try:
+            ticker = yf.Ticker(ticker_sa)
+            info = ticker.info
+            if not info:
+                # Tentar obter informações básicas se o info estiver vazio
+                hist = ticker.history(period="1d")
+                if not hist.empty:
+                    info = {
+                        "marketCap": hist["Close"].iloc[-1] * ticker.info.get("sharesOutstanding", 0),
+                        "currentPrice": hist["Close"].iloc[-1],
+                        "previousClose": hist["Close"].iloc[-1],
+                        "sharesOutstanding": ticker.info.get("sharesOutstanding", 0)
+                    }
+            if info:  # Se conseguiu informações, sai do loop
+                break
+                
+        except Exception as e:
+            if "429" in str(e):  # Tratamento específico para rate limiting
+                wait_time = min(
+                    VALUATION_CONFIG["MAX_DELAY"],
+                    VALUATION_CONFIG["MIN_DELAY"] * (2 ** attempt) + random.uniform(0, 1)
+                )
+                logger.warning(f"Rate limit atingido para {ticker_sa}. Tentativa {attempt+1}. Aguardando {wait_time:.1f}s")
+                time.sleep(wait_time)
+            else:
+                logger.warning(f"Erro ao obter info do yfinance para {ticker_sa}: {e}")
+                if attempt == VALUATION_CONFIG["MAX_RETRIES"] - 1:
+                    return {}
     
     return info
 
@@ -272,20 +308,20 @@ def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market
             return None
 
         return {
-            'Nome': info.get('shortName', ticker)[:30], 
-            'Ticker': ticker,
-            'Upside': upside, 
-            'ROIC': roic, 
-            'WACC': wacc, 
-            'Spread': roic - wacc,
-            'Preco_Atual': preco_atual, 
-            'Preco_Justo': preco_justo,
-            'Market_Cap': market_cap, 
-            'EVA': eva,
-            'Capital_Empregado': capital_empregado, 
-            'NOPAT': nopat_recente,
-            'Beta': beta,
-            'Data_Calculo': datetime.now().strftime('%Y-%m-%d')
+            'nome': info.get('shortName', ticker)[:30], 
+            'ticker': ticker,
+            'upside': upside, 
+            'roic': roic, 
+            'wacc': wacc, 
+            'spread': roic - wacc,
+            'preco_atual': preco_atual, 
+            'preco_justo': preco_justo,
+            'market_cap': market_cap, 
+            'eva': eva,
+            'capital_empregado': capital_empregado, 
+            'nopat': nopat_recente,
+            'beta': beta,
+            'data_calculo': datetime.now().strftime('%Y-%m-%d')
         }
     except Exception as e:
         logger.error(f"Erro ao processar valuation para {ticker_sa}: {e}", exc_info=True)
@@ -316,10 +352,10 @@ def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataF
     resultados_brutos = []
     
     # Itera sobre o mapa de tickers
-    for _, row in ticker_map.iterrows():
-        ticker = row['ticker']
-        codigo_cvm = row['cd_cvm']
-        nome_empresa = row['nome_empresa']
+    for idx, row in enumerate(ticker_map.iterrows()):
+        ticker = row[1]['ticker']
+        codigo_cvm = row[1]['cd_cvm']
+        nome_empresa = row[1]['nome_empresa']
         
         # Pular empresas na lista de exclusão
         if ticker in VALUATION_CONFIG["EMPRESAS_EXCLUIDAS"]:
@@ -359,7 +395,12 @@ def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataF
         if len(resultados_brutos) % 5 == 0:
             gc.collect()
             logger.info(f"Memória intermediária: {process.memory_info().rss / (1024 * 1024):.2f} MB")
-    
+            
+        # Adicionar delay para evitar rate limiting
+        if idx < len(ticker_map) - 1:
+            delay = VALUATION_CONFIG["REQUEST_DELAY"] + random.uniform(-0.2, 0.2)
+            time.sleep(delay)
+
     # Filtro final de sanidade
     resultados_filtrados = [
         r for r in resultados_brutos 
