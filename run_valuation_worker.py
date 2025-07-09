@@ -127,16 +127,16 @@ def load_ticker_mapping(file_path='mapeamento_tickers.csv'):
         df.columns = [col.strip().lower() for col in df.columns]
         
         # Validação
-        df['CD_CVM'] = pd.to_numeric(df['CD_CVM'], errors='coerce')
-        df = df.dropna(subset=['CD_CVM'])
-        df['CD_CVM'] = df['CD_CVM'].astype(int)
-        df = df.drop_duplicates(subset=['CD_CVM'], keep='first')
+        df['cd_cvm'] = pd.to_numeric(df['cd_cvm'], errors='coerce')
+        df = df.dropna(subset=['cd_cvm'])
+        df['cd_cvm'] = df['cd_cvm'].astype(int)
+        df = df.drop_duplicates(subset=['cd_cvm'], keep='first')
         
         logger.info(f"✅ {len(df)} tickers carregados.")
-        return df[['CD_CVM', 'TICKER']]
+        return df[['cd_cvm', 'ticker']]
     
     except Exception as e:
-        logger.error(f"❌ Erro ao carregar mapeamento: {e}")
+       logger.error(f"❌ Erro ao carregar mapeamento: {e}")
         raise
 
 def load_financial_data(engine):
