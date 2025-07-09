@@ -133,31 +133,28 @@ def get_companies_list(engine, ticker_mapping_df):
     logger.info("Buscando lista de empresas do banco...")
     try:
         with engine.connect() as connection:
-            query = text('SELECT DISTINCT "DENOM_CIA", "CD_CVM" FROM financial_data ORDER BY "DENOM_CIA"')
+            # Garantir que os nomes das colunas estão corretos
+            query = text('SELECT DISTINCT "DENOM_CIA" as nome_empresa, "CD_CVM" FROM financial_data ORDER BY "DENOM_CIA"')
             df_companies_db = pd.read_sql(query, connection)
         
         logger.info(f"Empresas encontradas no banco: {len(df_companies_db)}")
         
-        # Renomeia colunas e faz merge com tickers
-        df_companies_db = df_companies_db.rename(columns={'DENOM_CIA': 'NOME_EMPRESA'})
-        final_df = pd.merge(
-            df_companies_db, 
-            ticker_mapping_df, 
-            on='CD_CVM', 
-            how='left'
-        )
+        # Verifica se o merge é necessário
+        if not ticker_mapping_df.empty:
+            final_df = pd.merge(
+                df_companies_db,
+                ticker_mapping_df,
+                on='CD_CVM',
+                how='left'
+            )
+            # Preenche tickers faltantes com o nome da empresa
+            final_df['TICKER'] = final_df['TICKER'].fillna(final_df['nome_empresa'])
+        else:
+            final_df = df_companies_db
+            final_df['TICKER'] = final_df['nome_empresa']
         
-        # Correção: usar colunas corretas após o merge
-        final_df['TICKER'] = final_df['TICKER'].fillna(final_df['NOME_EMPRESA'])
-        final_df['NOME_EMPRESA'] = final_df['NOME_EMPRESA']  # Mantém o nome original do banco
+        return final_df[['CD_CVM', 'TICKER', 'nome_empresa']].drop_duplicates().to_dict(orient='records')
         
-        logger.info(f"Empresas após merge: {len(final_df)}")
-        
-        # Remove colunas desnecessárias e duplicatas
-        final_df = final_df[['CD_CVM', 'TICKER', 'NOME_EMPRESA']].drop_duplicates()
-        
-        logger.info(f"[OK] {len(final_df)} empresas encontradas e mapeadas.")
-        return final_df.to_dict(orient='records')
     except Exception as e:
         logger.error(f"[ERRO] Erro ao buscar lista de empresas: {e}", exc_info=True)
         return []
@@ -227,7 +224,7 @@ def run_valuation_worker_if_needed(engine):
                 return
                 
             with engine.connect() as connection:
-                # CORREÇÃO: usar nomes de colunas em minúsculas
+                # COLUNAS ATUALIZADAS (conforme debug/columns)
                 cols = ["cd_cvm", "cd_conta", "vl_conta", "dt_refer", "denom_cia"]
                 df_full_data = pd.read_sql(
                     text(f'SELECT {",".join(cols)} FROM financial_data'),
@@ -247,7 +244,7 @@ def run_valuation_worker_if_needed(engine):
                         chunksize=100,
                         method='multi'
                     )
-                    logger.info(f"[OK] Worker executado com sucesso. {len(df_results)} resultados salvos.")
+                    logger.info(f"[OK] Worker executado. {len(df_results)} resultados salvos.")
                 else:
                     logger.warning("Worker não gerou resultados.")
             else:
@@ -320,7 +317,7 @@ def index():
 
         years_to_analyze = list(range(start_year, end_year + 1))
 
-        # Busca dados da empresa
+        # Busca dados da empresa (usando CD_CVM conforme estrutura)
         try:
             with db_engine.connect() as connection:
                 query = text('SELECT * FROM financial_data WHERE "CD_CVM" = :cvm_code')
@@ -441,6 +438,30 @@ def reload_companies():
             "status": "error",
             "message": str(e)
         }), 500
+
+@app.route('/debug/columns')
+def debug_columns():
+    if db_engine is None:
+        return jsonify({"error": "Database not connected"}), 500
+    
+    inspector = inspect(db_engine)
+    columns = inspector.get_columns('financial_data')
+    
+    # Adicione exemplos de dados para ajudar no debug
+    sample_data = []
+    with db_engine.connect() as conn:
+        result = conn.execute(text('SELECT * FROM financial_data LIMIT 5'))
+        for row in result:
+            sample_data.append({key: str(value) for key, value in zip(result.keys(), row)})
+    
+    return jsonify({
+        "columns": [{"name": col["name"], "type": str(col["type"])} for col in columns],
+        "sample_data": sample_data
+    })
+
+print(f"Total de empresas carregadas: {len(companies_list)}")
+if len(companies_list) > 0:
+    print("Exemplo de empresa:", companies_list[0])
 
 @app.errorhandler(404)
 def page_not_found(e):
