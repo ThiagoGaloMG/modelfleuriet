@@ -150,7 +150,7 @@ def get_companies_list(engine, ticker_mapping_df):
     try:
         with engine.connect() as connection:
             # Garantir que os nomes das colunas estão corretos
-            query = text('SELECT DISTINCT "DENOM_CIA" as nome_empresa, "cd_cvm" FROM financial_data ORDER BY "DENOM_CIA"')
+            query = text('SELECT DISTINCT denom_cia as nome_empresa, cd_cvm FROM financial_data ORDER BY denom_cia')
             df_companies_db = pd.read_sql(query, connection)
         
         logger.info(f"Empresas encontradas no banco: {len(df_companies_db)}")
@@ -191,21 +191,21 @@ def ensure_valuation_table_exists(engine):
         logger.info("Criando tabela 'valuation_results'...")
         create_query = text("""
             CREATE TABLE valuation_results (
-                "Ticker" VARCHAR(20) PRIMARY KEY,
-                "Nome" VARCHAR(255),
-                "Upside" NUMERIC, 
-                "ROIC" NUMERIC, 
-                "WACC" NUMERIC, 
-                "Spread" NUMERIC,
-                "Preco_Atual" NUMERIC, 
-                "Preco_Justo" NUMERIC,
-                "Market_Cap" BIGINT, 
-                "EVA" NUMERIC,
-                "Capital_Empregado" NUMERIC, 
-                "NOPAT" NUMERIC,
-                "Beta" NUMERIC,
-                "Data_Calculo" DATE,
-                "Data_Atualizacao" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ticker VARCHAR(20) PRIMARY KEY,
+                nome VARCHAR(255),
+                upside NUMERIC,
+                roic NUMERIC,
+                wacc NUMERIC,
+                spread NUMERIC,
+                preco_atual NUMERIC,
+                preco_justo NUMERIC,
+                market_cap BIGINT,
+                eva NUMERIC,
+                capital_empregado NUMERIC,
+                nopat NUMERIC,
+                beta NUMERIC,
+                data_calculo DATE,
+                data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         
