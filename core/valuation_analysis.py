@@ -13,9 +13,9 @@ from typing import Dict, List, Any
 import gc
 import psutil
 import os
-import time  # Importação adicionada para controle de rate limiting
-import random  # Importação adicionada para randomização de delays
-from sqlalchemy import create_engine
+import time
+import random
+
 # --- Configuração Básica ---
 warnings.filterwarnings("ignore")
 logging.basicConfig(
@@ -50,19 +50,13 @@ VALUATION_CONFIG = {
     "MIN_DELAY": 0.5       # Delay mínimo para backoff exponencial
 }
 
-# --- Conexão com Banco de Dados ---
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("Variável de ambiente DATABASE_URL não definida")
-engine = create_engine(DATABASE_URL)
-
 # --- Funções de Lógica de Negócio e Cálculos ---
 
 @lru_cache(maxsize=1)
 def obter_dados_mercado() -> Dict[str, Any]:
     """Obtém premissas de mercado (taxa livre de risco, prêmio) e dados do IBOV para cálculo do Beta."""
     dados = {
-        "risk_free_rate": 0.15, 
+        "risk_free_rate": 0.105, 
         "premio_risco_mercado": 0.08, 
         "cresc_perpetuo": 0.03,
         "ibov_data": pd.DataFrame()
@@ -308,20 +302,20 @@ def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market
             return None
 
         return {
-            'nome': info.get('shortName', ticker)[:30], 
-            'ticker': ticker,
-            'upside': upside, 
-            'roic': roic, 
-            'wacc': wacc, 
-            'spread': roic - wacc,
-            'preco_atual': preco_atual, 
-            'preco_justo': preco_justo,
-            'market_cap': market_cap, 
-            'eva': eva,
-            'capital_empregado': capital_empregado, 
-            'nopat': nopat_recente,
-            'beta': beta,
-            'data_calculo': datetime.now().strftime('%Y-%m-%d')
+            'Nome': info.get('shortName', ticker)[:30], 
+            'Ticker': ticker,
+            'Upside': upside, 
+            'ROIC': roic, 
+            'WACC': wacc, 
+            'Spread': roic - wacc,
+            'Preco_Atual': preco_atual, 
+            'Preco_Justo': preco_justo,
+            'Market_Cap': market_cap, 
+            'EVA': eva,
+            'Capital_Empregado': capital_empregado, 
+            'NOPAT': nopat_recente,
+            'Beta': beta,
+            'Data_Calculo': datetime.now().strftime('%Y-%m-%d')
         }
     except Exception as e:
         logger.error(f"Erro ao processar valuation para {ticker_sa}: {e}", exc_info=True)
