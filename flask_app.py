@@ -287,8 +287,8 @@ def run_valuation_worker_if_needed(engine):
                 return
                 
             with engine.connect() as connection:
-                # COLUNAS ATUALIZADAS (conforme debug/columns)
-                cols = ["cd_cvm", "cd_conta", "vl_conta", "dt_refer", "denom_cia"]
+                # Usar os nomes corretos das colunas conforme banco
+                cols = ['"CD_CVM"', '"CD_CONTA"', '"VL_CONTA"', '"DT_REFER"', '"DENOM_CIA"']
                 df_full_data = pd.read_sql(
                     text(f'SELECT {",".join(cols)} FROM financial_data'),
                     connection
@@ -386,7 +386,7 @@ def index():
         # Busca dados da empresa (usando cd_cvm conforme estrutura)
         try:
             with db_engine.connect() as connection:
-                query = text('SELECT * FROM financial_data WHERE cd_cvm = :cvm_code')
+                query = text('SELECT * FROM financial_data WHERE "CD_CVM" = :cvm_code')
                 df_company = pd.read_sql(query, connection, params={'cvm_code': cvm_code})
         except Exception as e:
             logger.error(f"Erro ao buscar dados da empresa: {e}")
