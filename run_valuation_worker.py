@@ -92,21 +92,21 @@ def create_valuation_table(engine):
     try:
         create_query = text(f"""
         CREATE TABLE {VALUATION_TABLE_NAME} (
-            "Ticker" VARCHAR(20) PRIMARY KEY,
-            "Nome" VARCHAR(255),
-            "Upside" NUMERIC, 
-            "ROIC" NUMERIC, 
-            "WACC" NUMERIC, 
-            "Spread" NUMERIC,
-            "Preco_Atual" NUMERIC, 
-            "Preco_Justo" NUMERIC,
-            "Market_Cap" BIGINT, 
-            "EVA" NUMERIC,
-            "Capital_Empregado" NUMERIC, 
-            "NOPAT" NUMERIC,
-            "Beta" NUMERIC,
-            "Data_Calculo" DATE,
-            "Data_Atualizacao" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ticker VARCHAR(20) PRIMARY KEY,
+            nome VARCHAR(255),
+            upside NUMERIC,
+            roic NUMERIC,
+            wacc NUMERIC,
+            spread NUMERIC,
+            preco_atual NUMERIC,
+            preco_justo NUMERIC,
+            market_cap BIGINT,
+            eva NUMERIC,
+            capital_empregado NUMERIC,
+            nopat NUMERIC,
+            beta NUMERIC,
+            data_calculo DATE,
+            data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """)
         
@@ -123,8 +123,8 @@ def load_ticker_mapping(file_path='mapeamento_tickers.csv'):
     try:
         logger.info(f"Carregando mapeamento de {file_path}...")
         
-        df = pd.read_csv(file_path, sep=',', dtype={'CD_CVM': str})
-        df.columns = [col.strip().upper() for col in df.columns]
+        df = pd.read_csv(file_path, sep=',', dtype={'cd_cvm': str})
+        df.columns = [col.strip().lower() for col in df.columns]
         
         # Validação
         df['CD_CVM'] = pd.to_numeric(df['CD_CVM'], errors='coerce')
