@@ -305,7 +305,7 @@ def run_full_valuation_analysis(ticker_map: pd.DataFrame) -> List[Dict[str, Any]
     with engine.connect() as connection:
         # Usar nomes exatos das colunas como estão no banco (com aspas e maiúsculas)
         query = text('''
-            SELECT "CD_CVM", "CD_CONTA", "VL_CONTA", "DT_REFER", "DENOM_CIA", "ORDEM_EXERC" 
+            SELECT cd_cvm, cd_conta, vl_conta, dt_refer, denom_cia, ordem_exerc 
             FROM financial_data
         ''')
         df_full_data = pd.read_sql(query, connection)
