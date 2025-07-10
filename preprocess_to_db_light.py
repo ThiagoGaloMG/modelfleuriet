@@ -119,3 +119,10 @@ if __name__ == '__main__':
         print(processed_data['EMPRESA'].unique())
     else:
         print("Falha no processamento dos dados.")
+
+if processed_data is not None:
+    database_url = os.getenv('DATABASE_URL')
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    engine = create_engine(database_url)
+    processed_data.to_sql('financial_data', engine, if_exists='replace', index=False)
