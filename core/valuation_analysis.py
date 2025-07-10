@@ -42,7 +42,7 @@ VALUATION_CONFIG = {
         "FORNECEDORES": "2.01.02",
         "DESPESAS_FINANCEIRAS": "3.07" 
     },
-    "EMPRESAS_EXCLUIDAS": [\'ITUB4\', \'BBDC4\', \'BBAS3\', \'SANB11\', \'B3SA3\'],
+    "EMPRESAS_EXCLUIDAS": ['ITUB4', 'BBDC4', 'BBAS3', 'SANB11', 'B3SA3'],
     "MAX_RETRIES": 3,
     "TIMEOUT": 15,
     "REQUEST_DELAY": 1.5,  # Delay padrão entre requisições
@@ -143,13 +143,13 @@ def calcular_beta(ticker: str, ibov_data: pd.DataFrame) -> float:
                     [dados_acao["Adj Close"], ibov_data["Adj Close"]], 
                     axis=1
                 ).dropna()
-                dados_combinados.columns = [\'Acao\', \'Ibov\']
+                dados_combinados.columns = ['Acao', 'Ibov']
                 
                 retornos = dados_combinados.pct_change().dropna()
                 if len(retornos) < 50: 
                     return 1.0
                 
-                slope, _, _, _, _ = stats.linregress(retornos[\'Ibov\'], retornos[\'Acao\'])
+                slope, _, _, _, _ = stats.linregress(retornos['Ibov'], retornos['Acao'])
                 beta_ajustado = 0.67 * slope + 0.33 * 1.0
                 return max(0.1, min(beta_ajustado, 2.5))  # Limites razoáveis para beta
             
@@ -216,7 +216,7 @@ def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market
             return None
 
         C = VALUATION_CONFIG["CONTAS_CVM"]
-        ticker = ticker_sa.replace(\".SA\", \'\')
+        ticker = ticker_sa.replace(".SA", "")
         
         # Obter informações de mercado
         info = obter_info_yfinance(ticker_sa)
@@ -302,20 +302,20 @@ def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market
             return None
 
         return {
-            \'Nome\': info.get(\'shortName\', ticker)[:30], 
-            \'Ticker\': ticker,
-            \'Upside\': upside, 
-            \'ROIC\': roic, 
-            \'WACC\': wacc, 
-            \'Spread\': roic - wacc,
-            \'Preco_Atual\': preco_atual, 
-            \'Preco_Justo\': preco_justo,
-            \'Market_Cap\': market_cap, 
-            \'EVA\': eva,
-            \'Capital_Empregado\': capital_empregado, 
-            \'NOPAT\': nopat_recente,
-            \'Beta\': beta,
-            \'Data_Calculo\': datetime.now().strftime(\'%Y-%m-%d\')
+            'Nome': info.get('shortName', ticker)[:30], 
+            'Ticker': ticker,
+            'Upside': upside, 
+            'ROIC': roic, 
+            'WACC': wacc, 
+            'Spread': roic - wacc,
+            'Preco_Atual': preco_atual, 
+            'Preco_Justo': preco_justo,
+            'Market_Cap': market_cap, 
+            'EVA': eva,
+            'Capital_Empregado': capital_empregado, 
+            'NOPAT': nopat_recente,
+            'Beta': beta,
+            'Data_Calculo': datetime.now().strftime('%Y-%m-%d')
         }
     except Exception as e:
         logger.error(f"Erro ao processar valuation para {ticker_sa}: {e}", exc_info=True)
@@ -330,11 +330,11 @@ def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataF
     process = psutil.Process()
     logger.info(f"Memória inicial: {process.memory_info().rss / (1024 * 1024):.2f} MB")
     
-    df_full_data.columns = [col.lower().replace("\"", "") for col in df_full_data.columns]
-    ticker_map.columns = [col.lower().replace("\"", "") for col in ticker_map.columns]
+    df_full_data.columns = [col.lower().replace(""", "") for col in df_full_data.columns]
+    ticker_map.columns = [col.lower().replace(""", "") for col in ticker_map.columns]
     # Converter cd_cvm para int em ambos os DataFrames para compatibilidade
-    df_full_data[\'cd_cvm\'] = pd.to_numeric(df_full_data[\'cd_cvm\'], errors=\'coerce\').astype(\'Int64\')
-    ticker_map[\'cd_cvm\'] = pd.to_numeric(ticker_map[\'cd_cvm\'], errors=\'coerce\').astype(\'Int64\')
+    df_full_data['cd_cvm'] = pd.to_numeric(df_full_data['cd_cvm'], errors='coerce').astype('Int64')
+    ticker_map['cd_cvm'] = pd.to_numeric(ticker_map['cd_cvm'], errors='coerce').astype('Int64')
     
     logger.info(f"Dados financeiros recebidos: {len(df_full_data)} registros")
     logger.info(f"Tickers mapeados: {len(ticker_map)} empresas")
@@ -345,9 +345,9 @@ def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataF
     
     # Itera sobre o mapa de tickers
     for idx, row in enumerate(ticker_map.iterrows()):
-        ticker = row[1][\'ticker\']
-        codigo_cvm = row[1][\'cd_cvm\']
-        nome_empresa = row[1][\'nome_empresa\']
+        ticker = row[1]['ticker']
+        codigo_cvm = row[1]['cd_cvm']
+        nome_empresa = row[1]['nome_empresa']
         
         # Pular empresas na lista de exclusão
         if ticker in VALUATION_CONFIG["EMPRESAS_EXCLUIDAS"]:
@@ -371,12 +371,12 @@ def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataF
             
             if resultado:
                 # Adicionar informações básicas da empresa
-                resultado[\'ticker\'] = ticker
-                resultado[\'nome\'] = nome_empresa
-                resultado[\'cd_cvm\'] = int(codigo_cvm)
+                resultado['ticker'] = ticker
+                resultado['nome'] = nome_empresa
+                resultado['cd_cvm'] = int(codigo_cvm)
                 
                 resultados_brutos.append(resultado)
-                logger.info(f"Valuation calculado para {ticker}: Upside {resultado.get(\'upside\', 0):.2%}")
+                logger.info(f"Valuation calculado para {ticker}: Upside {resultado.get('upside', 0):.2%}")
             else:
                 logger.warning(f"Falha no cálculo de valuation para {ticker}")
                 
@@ -396,7 +396,7 @@ def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataF
     # Filtro final de sanidade
     resultados_filtrados = [
         r for r in resultados_brutos 
-        if r and 0.01 < r.get(\'wacc\', 1) < 0.40 and -0.99 < r.get(\'upside\', 0) < 10.0
+        if r and 0.01 < r.get('wacc', 1) < 0.40 and -0.99 < r.get('upside', 0) < 10.0
     ]
 
     total_calculado = len(resultados_brutos)
