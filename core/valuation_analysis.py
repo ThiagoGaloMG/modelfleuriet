@@ -330,8 +330,8 @@ def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataF
     process = psutil.Process()
     logger.info(f"Memória inicial: {process.memory_info().rss / (1024 * 1024):.2f} MB")
     
-    df_full_data.columns = [col.lower().replace(""", "") for col in df_full_data.columns]
-    ticker_map.columns = [col.lower().replace(""", "") for col in ticker_map.columns]
+    df_full_data.columns = [col.lower().replace('"', '') for col in df_full_data.columns]
+    ticker_map.columns = [col.lower().replace('"', '') for col in ticker_map.columns]
     # Converter cd_cvm para int em ambos os DataFrames para compatibilidade
     df_full_data['cd_cvm'] = pd.to_numeric(df_full_data['cd_cvm'], errors='coerce').astype('Int64')
     ticker_map['cd_cvm'] = pd.to_numeric(ticker_map['cd_cvm'], errors='coerce').astype('Int64')
