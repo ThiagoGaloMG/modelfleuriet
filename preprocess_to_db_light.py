@@ -19,10 +19,10 @@ import gc
 load_dotenv()
 
 class Config:
-    VALID_YEARS = ['2022', '2023', '2024']
-    CHUNK_SIZE = 2000
-    TABLE_NAME = 'financial_data'
-    BATCH_SIZE = 500  # Tamanho do lote para inserção
+    valid_years = ['2022', '2023', '2024']
+    chunk_size = 2000
+    table_name = 'financial_data'
+    batch_size = 500  # Tamanho do lote para inserção
 
 def setup_logging():
     logging.basicConfig(
@@ -40,16 +40,16 @@ class DatabaseManager:
         self.engine = self._create_engine()
         self.metadata = MetaData()
         self.financial_table = Table(
-            Config.TABLE_NAME, self.metadata,
-            Column('CD_CVM', Integer),
-            Column('DT_REFER', Date),
-            Column('VERSAO', String(20)),
-            Column('CD_CONTA', String(20)),
-            Column('DS_CONTA', Text),
-            Column('VL_CONTA', Numeric),
-            Column('ST_CONTA', String(10)),
-            Column('DENOM_CIA', String(255)),
-            PrimaryKeyConstraint('CD_CVM', 'DT_REFER', 'CD_CONTA')
+            Config.table_name, self.metadata,
+            Column('cd_cvm', Integer),
+            Column('dt_refer', Date),
+            Column('versao', String(20)),
+            Column('cd_conta', String(20)),
+            Column('ds_conta', Text),
+            Column('vl_conta', Numeric),
+            Column('st_conta', String(10)),
+            Column('denom_cia', String(255)),
+            PrimaryKeyConstraint('cd_cvm', 'dt_refer', 'cd_conta')
         )
 
     def _create_engine(self):
@@ -89,20 +89,20 @@ class DatabaseManager:
 
     def create_table_if_not_exists(self):
         inspector = inspect(self.engine)
-        if inspector.has_table(Config.TABLE_NAME):
-            logger.info(f"Tabela '{Config.TABLE_NAME}' já existe. Recriando...")
+        if inspector.has_table(Config.table_name):
+            logger.info(f"Tabela '{Config.table_name}' já existe. Recriando...")
             try:
                 with self.engine.connect() as connection:
-                    connection.execute(text(f"DROP TABLE IF EXISTS {Config.TABLE_NAME}"))
+                    connection.execute(text(f"DROP TABLE IF EXISTS {Config.table_name}"))
                     connection.commit()
             except Exception as e:
                 logger.error(f"Erro ao dropar tabela existente: {e}")
                 raise
 
-        logger.info(f"Criando tabela '{Config.TABLE_NAME}'...")
+        logger.info(f"Criando tabela '{Config.table_name}'...")
         try:
             self.metadata.create_all(self.engine)
-            logger.info(f"✅ Tabela '{Config.TABLE_NAME}' criada com sucesso.")
+            logger.info(f"✅ Tabela '{Config.table_name}' criada com sucesso.")
         except SQLAlchemyError as e:
             logger.error(f"❌ Falha ao criar tabela: {e}", exc_info=True)
             raise
@@ -110,11 +110,11 @@ class DatabaseManager:
 class DataProcessor:
     @staticmethod
     def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-        # Converter nomes de colunas para maiúsculas (padrão do banco)
-        df.columns = [col.upper() for col in df.columns]
+        # Converter nomes de colunas para minúsculas
+        df.columns = [col.lower() for col in df.columns]
         
         # Converter colunas de data
-        date_cols = ['DT_REFER', 'DT_FIM_EXERC', 'DT_INI_EXERC']
+        date_cols = ['dt_refer', 'dt_fim_exerc', 'dt_ini_exerc']
         for col in date_cols:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
@@ -122,23 +122,23 @@ class DataProcessor:
                 df[col] = df[col].apply(lambda x: None if pd.isna(x) else x)
         
         # Converter colunas numéricas
-        numeric_cols = ['VL_CONTA', 'CD_CVM', 'VERSAO']
+        numeric_cols = ['vl_conta', 'cd_cvm', 'versao']
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         
         # Remover linhas com valores essenciais faltando
-        required_cols = ['CD_CVM', 'DT_REFER', 'CD_CONTA', 'VL_CONTA']
+        required_cols = ['cd_cvm', 'dt_refer', 'cd_conta', 'vl_conta']
         df.dropna(subset=[c for c in required_cols if c in df.columns], inplace=True)
         
         # Garantir tipos de dados corretos
-        if 'CD_CVM' in df.columns:
-            df['CD_CVM'] = df['CD_CVM'].astype(int)
-        if 'CD_CONTA' in df.columns:
-            df['CD_CONTA'] = df['CD_CONTA'].astype(str)
+        if 'cd_cvm' in df.columns:
+            df['cd_cvm'] = df['cd_cvm'].astype(int)
+        if 'cd_conta' in df.columns:
+            df['cd_conta'] = df['cd_conta'].astype(str)
         
         # Remover duplicatas baseadas na chave primária
-        df.drop_duplicates(subset=['CD_CVM', 'DT_REFER', 'CD_CONTA'], keep='last', inplace=True)
+        df.drop_duplicates(subset=['cd_cvm', 'dt_refer', 'cd_conta'], keep='last', inplace=True)
         
         return df
 
@@ -160,10 +160,10 @@ class DataLoader:
                             df = pd.read_csv(
                                 f, sep=';', encoding='latin1', decimal=',',
                                 low_memory=False,
-                                dtype={'CD_CONTA': str, 'CNPJ_CIA': str}
+                                dtype={'cd_conta': str, 'cnpj_cia': str}
                             )
-                            # Converter nomes de colunas para maiúsculas
-                            df.columns = [col.upper() for col in df.columns]
+                            # Converter nomes de colunas para minúsculas
+                            df.columns = [col.lower() for col in df.columns]
                             all_data.append(df)
                     except Exception as e:
                         logger.error(f"Erro ao ler {csv_file} do ZIP: {e}")
@@ -193,7 +193,7 @@ class ETLPipeline:
         
         self.db.create_table_if_not_exists()
         
-        for year in Config.VALID_YEARS:
+        for year in Config.valid_years:
             self._process_year(year)
             
         logger.info("✅ PIPELINE CONCLUÍDO COM SUCESSO.")
@@ -242,20 +242,20 @@ class ETLPipeline:
             
             # Inserir em lotes usando SQLAlchemy Core
             table = self.db.financial_table
-            chunks = [data[i:i + Config.BATCH_SIZE] 
-                    for i in range(0, len(data), Config.BATCH_SIZE)]
+            chunks = [data[i:i + Config.batch_size] 
+                    for i in range(0, len(data), Config.batch_size)]
             
             with self.db.engine.begin() as conn:
                 for i, chunk in enumerate(chunks):
                     # Usar inserção com ON CONFLICT UPDATE (sintaxe PostgreSQL)
                     stmt = insert(table).values(chunk)
                     stmt = stmt.on_conflict_do_update(
-                        index_elements=['CD_CVM', 'DT_REFER', 'CD_CONTA'],
+                        index_elements=['cd_cvm', 'dt_refer', 'cd_conta'],
                         set_={
-                            'VL_CONTA': stmt.excluded.VL_CONTA,
-                            'DS_CONTA': stmt.excluded.DS_CONTA,
-                            'ST_CONTA': stmt.excluded.ST_CONTA,
-                            'DENOM_CIA': stmt.excluded.DENOM_CIA
+                            'vl_conta': stmt.excluded.vl_conta,
+                            'ds_conta': stmt.excluded.ds_conta,
+                            'st_conta': stmt.excluded.st_conta,
+                            'denom_cia': stmt.excluded.denom_cia
                         }
                     )
                     conn.execute(stmt)
