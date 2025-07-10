@@ -1,128 +1,285 @@
 #!/usr/bin/env python3
 import pandas as pd
-import numpy as np
-import yfinance as yf
+import zipfile
 import os
+from sqlalchemy import create_engine, text, inspect, MetaData, Table, Column
+from sqlalchemy import String, Integer, Date, Numeric, Text
+from sqlalchemy import PrimaryKeyConstraint
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+from sqlalchemy.dialects.postgresql import insert
+import time
 import logging
+from tqdm import tqdm
+import numpy as np
+from typing import Optional
+from dotenv import load_dotenv
+import gc
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Carrega variáveis de ambiente
+load_dotenv()
 
-def preprocess_data(file_path, cvm_codes_df):
-    logging.info(f"Processando arquivo: {file_path}")
-    df = pd.read_csv(file_path, sep=';', encoding='ISO-8859-1')
+class Config:
+    VALID_YEARS = ['2022', '2023', '2024']
+    CHUNK_SIZE = 2000
+    TABLE_NAME = 'financial_data'
+    BATCH_SIZE = 500  # Tamanho do lote para inserção
 
-    # Padronizar nomes das colunas para minúsculas e sem aspas
-    df.columns = [col.lower().replace('"', '') for col in df.columns]
+def setup_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[logging.StreamHandler()]
+    )
+    return logging.getLogger(__name__)
 
-    # Renomear colunas para facilitar o acesso
-    df = df.rename(columns={
-        'cd_cvm': 'CD_CVM',
-        'dt_refer': 'DT_REFER',
-        'versao': 'VERSAO',
-        'cd_conta': 'CD_CONTA',
-        'ds_conta': 'DS_CONTA',
-        'vl_conta': 'VL_CONTA',
-        'st_conta': 'ST_CONTA'
-    })
+logger = setup_logging()
 
-    # Filtrar apenas empresas com CD_CVM presente no mapeamento
-    df = df[df['CD_CVM'].isin(cvm_codes_df['CD_CVM'])]
+class DatabaseManager:
+    def __init__(self):
+        self.engine = self._create_engine()
+        self.metadata = MetaData()
+        self.financial_table = Table(
+            Config.TABLE_NAME, self.metadata,
+            Column('CD_CVM', Integer),
+            Column('DT_REFER', Date),
+            Column('VERSAO', String(20)),
+            Column('CD_CONTA', String(20)),
+            Column('DS_CONTA', Text),
+            Column('VL_CONTA', Numeric),
+            Column('ST_CONTA', String(10)),
+            Column('DENOM_CIA', String(255)),
+            PrimaryKeyConstraint('CD_CVM', 'DT_REFER', 'CD_CONTA')
+        )
 
-    # Converter VL_CONTA para numérico, tratando vírgulas como separador decimal
-    df['VL_CONTA'] = df['VL_CONTA'].astype(str).str.replace(',', '.', regex=False)
-    df['VL_CONTA'] = pd.to_numeric(df['VL_CONTA'], errors='coerce')
+    def _create_engine(self):
+        database_url = os.getenv('DATABASE_URL')
+        if not database_url:
+            logger.error("DATABASE_URL não definida.")
+            raise ValueError("DATABASE_URL não definida.")
+        
+        # Corrige a string de conexão para o formato adequado
+        database_url = database_url.strip()
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+        
+        try:
+            engine = create_engine(
+                database_url,
+                pool_pre_ping=True,
+                pool_size=5,
+                max_overflow=10,
+                pool_recycle=300,  # Reciclar conexões a cada 5 minutos
+                connect_args={
+                    "connect_timeout": 30,
+                    "keepalives": 1,
+                    "keepalives_idle": 30,
+                    "keepalives_interval": 10,
+                    "keepalives_count": 5
+                }
+            )
+            # Test connection
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            logger.info("✅ Engine do banco de dados criada com sucesso.")
+            return engine
+        except Exception as e:
+            logger.error(f"❌ Falha ao criar a engine do banco de dados: {e}", exc_info=True)
+            raise
 
-    # Preencher valores NaN em VL_CONTA com 0
-    df['VL_CONTA'] = df['VL_CONTA'].fillna(0)
+    def create_table_if_not_exists(self):
+        inspector = inspect(self.engine)
+        if inspector.has_table(Config.TABLE_NAME):
+            logger.info(f"Tabela '{Config.TABLE_NAME}' já existe. Recriando...")
+            try:
+                with self.engine.connect() as connection:
+                    connection.execute(text(f"DROP TABLE IF EXISTS {Config.TABLE_NAME}"))
+                    connection.commit()
+            except Exception as e:
+                logger.error(f"Erro ao dropar tabela existente: {e}")
+                raise
 
-    # Garantir que DT_REFER é datetime
-    df['DT_REFER'] = pd.to_datetime(df['DT_REFER'])
+        logger.info(f"Criando tabela '{Config.TABLE_NAME}'...")
+        try:
+            self.metadata.create_all(self.engine)
+            logger.info(f"✅ Tabela '{Config.TABLE_NAME}' criada com sucesso.")
+        except SQLAlchemyError as e:
+            logger.error(f"❌ Falha ao criar tabela: {e}", exc_info=True)
+            raise
 
-    # Filtrar apenas o último exercício para cada empresa e conta
-    df_filtered = df.loc[df.groupby(['CD_CVM', 'CD_CONTA'])['DT_REFER'].idxmax()]
+class DataProcessor:
+    @staticmethod
+    def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+        # Converter nomes de colunas para maiúsculas (padrão do banco)
+        df.columns = [col.upper() for col in df.columns]
+        
+        # Converter colunas de data
+        date_cols = ['DT_REFER', 'DT_FIM_EXERC', 'DT_INI_EXERC']
+        for col in date_cols:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
+                # Substituir NaT por None (que será NULL no banco)
+                df[col] = df[col].apply(lambda x: None if pd.isna(x) else x)
+        
+        # Converter colunas numéricas
+        numeric_cols = ['VL_CONTA', 'CD_CVM', 'VERSAO']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        # Remover linhas com valores essenciais faltando
+        required_cols = ['CD_CVM', 'DT_REFER', 'CD_CONTA', 'VL_CONTA']
+        df.dropna(subset=[c for c in required_cols if c in df.columns], inplace=True)
+        
+        # Garantir tipos de dados corretos
+        if 'CD_CVM' in df.columns:
+            df['CD_CVM'] = df['CD_CVM'].astype(int)
+        if 'CD_CONTA' in df.columns:
+            df['CD_CONTA'] = df['CD_CONTA'].astype(str)
+        
+        # Remover duplicatas baseadas na chave primária
+        df.drop_duplicates(subset=['CD_CVM', 'DT_REFER', 'CD_CONTA'], keep='last', inplace=True)
+        
+        return df
 
-    return df_filtered
+class DataLoader:
+    @staticmethod
+    def load_from_zip(zip_path: str, year: str) -> Optional[pd.DataFrame]:
+        if not os.path.exists(zip_path):
+            logger.warning(f"Arquivo {zip_path} não encontrado.")
+            return None
+            
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                all_data = []
+                csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv') and 'con' in f]
+                
+                for csv_file in tqdm(csv_files, desc=f"Lendo arquivos de {year}"):
+                    try:
+                        with zip_ref.open(csv_file) as f:
+                            df = pd.read_csv(
+                                f, sep=';', encoding='latin1', decimal=',',
+                                low_memory=False,
+                                dtype={'CD_CONTA': str, 'CNPJ_CIA': str}
+                            )
+                            # Converter nomes de colunas para maiúsculas
+                            df.columns = [col.upper() for col in df.columns]
+                            all_data.append(df)
+                    except Exception as e:
+                        logger.error(f"Erro ao ler {csv_file} do ZIP: {e}")
+                
+                if not all_data:
+                    logger.warning(f"Nenhum arquivo CSV válido encontrado em {zip_path}")
+                    return None
 
-def get_company_info(ticker):
+                combined_df = pd.concat(all_data, ignore_index=True)
+                del all_data
+                gc.collect()
+                return combined_df
+        except Exception as e:
+            logger.error(f"Erro ao processar o arquivo ZIP {zip_path}: {e}", exc_info=True)
+            return None
+
+class ETLPipeline:
+    def __init__(self):
+        self.db = DatabaseManager()
+        self.processor = DataProcessor()
+        self.loader = DataLoader()
+
+    def run(self):
+        logger.info("="*50)
+        logger.info("INICIANDO PIPELINE DE CARGA DE DADOS")
+        logger.info("="*50)
+        
+        self.db.create_table_if_not_exists()
+        
+        for year in Config.VALID_YEARS:
+            self._process_year(year)
+            
+        logger.info("✅ PIPELINE CONCLUÍDO COM SUCESSO.")
+
+    def _process_year(self, year: str):
+        zip_file = f'dfp_cia_aberta_{year}.zip'
+        if not os.path.exists(zip_file):
+            logger.error(f"Arquivo {zip_file} não encontrado. Pulando ano {year}.")
+            return
+        
+        start_time = time.time()
+        raw_df = self.loader.load_from_zip(zip_file, year)
+        if raw_df is None or raw_df.empty:
+            logger.error(f"Nenhum dado válido para {year}. Pulando.")
+            return
+        
+        logger.info(f"Dados brutos carregados: {len(raw_df)} linhas.")
+        
+        clean_df = self.processor.clean_data(raw_df)
+        logger.info(f"Dados limpos: {len(clean_df)} linhas.")
+        
+        if not clean_df.empty:
+            self._insert_data(clean_df, year)
+        
+        del raw_df, clean_df
+        gc.collect()
+        
+        elapsed = time.time() - start_time
+        logger.info(f"✅ {year} processado em {elapsed:.2f}s")
+
+    def _insert_data(self, df: pd.DataFrame, year: str):
+        try:
+            logger.info(f"Inserindo {len(df)} registros para o ano {year}...")
+            
+            # Converter DataFrame para lista de dicionários
+            data = []
+            for _, row in df.iterrows():
+                row_dict = {}
+                for col in df.columns:
+                    value = row[col]
+                    if pd.isna(value):
+                        row_dict[col] = None
+                    else:
+                        row_dict[col] = value
+                data.append(row_dict)
+            
+            # Inserir em lotes usando SQLAlchemy Core
+            table = self.db.financial_table
+            chunks = [data[i:i + Config.BATCH_SIZE] 
+                    for i in range(0, len(data), Config.BATCH_SIZE)]
+            
+            with self.db.engine.begin() as conn:
+                for i, chunk in enumerate(chunks):
+                    # Usar inserção com ON CONFLICT UPDATE (sintaxe PostgreSQL)
+                    stmt = insert(table).values(chunk)
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=['CD_CVM', 'DT_REFER', 'CD_CONTA'],
+                        set_={
+                            'VL_CONTA': stmt.excluded.VL_CONTA,
+                            'DS_CONTA': stmt.excluded.DS_CONTA,
+                            'ST_CONTA': stmt.excluded.ST_CONTA,
+                            'DENOM_CIA': stmt.excluded.DENOM_CIA
+                        }
+                    )
+                    conn.execute(stmt)
+                    logger.info(f"Lote {i+1}/{len(chunks)} inserido.")
+            
+            logger.info(f"✅ Dados do ano {year} inseridos com sucesso")
+            
+        except Exception as e:
+            logger.error(f"❌ Erro durante inserção para o ano {year}: {e}", exc_info=True)
+            raise
+
+def main():
     try:
-        info = yf.Ticker(ticker + '.SA').info
-        return info.get('longName', 'N/A')
+        pipeline = ETLPipeline()
+        pipeline.run()
     except Exception as e:
-        logging.warning(f"Erro ao obter info do yfinance para {ticker}.SA: {e}")
-        return 'N/A'
+        logger.critical(f"ERRO CRÍTICO: {e}", exc_info=True)
+        raise
 
-def process_all_data(base_path='.'):
-    logging.info("Iniciando o processamento de todos os dados.")
-    # Carregar mapeamento de tickers
-    mapeamento_path = os.path.join(base_path, 'mapeamento_tickers.csv')
-    if not os.path.exists(mapeamento_path):
-        logging.error(f"Arquivo não encontrado: {mapeamento_path}")
-        return None
-    mapeamento_tickers_df = pd.read_csv(mapeamento_path, sep=';', encoding='ISO-8859-1')
-    mapeamento_tickers_df.columns = [col.lower().replace('"', '') for col in mapeamento_tickers_df.columns]
-    mapeamento_tickers_df = mapeamento_tickers_df.rename(columns={'cd_cvm': 'CD_CVM', 'ticker': 'TICKER', 'nome_empresa': 'NOME_EMPRESA'})
-
-    # Filtrar mapeamento para garantir que CD_CVM é numérico e válido
-    mapeamento_tickers_df['CD_CVM'] = pd.to_numeric(mapeamento_tickers_df['CD_CVM'], errors='coerce')
-    mapeamento_tickers_df = mapeamento_tickers_df.dropna(subset=['CD_CVM'])
-    mapeamento_tickers_df['CD_CVM'] = mapeamento_tickers_df['CD_CVM'].astype(int)
-
-    # Obter nomes das empresas usando yfinance
-    mapeamento_tickers_df['NOME_EMPRESA_YAHOO'] = mapeamento_tickers_df['TICKER'].apply(get_company_info)
-
-    # Lista de arquivos a serem processados
-    files = [
-        'bpa_consolidado.csv',
-        'bpp_consolidado.csv',
-        'dfc_mi_consolidado.csv',
-        'dre_consolidado.csv'
-    ]
-
-    all_data = []
-    for f in files:
-        file_path = os.path.join(base_path, f)
-        if os.path.exists(file_path):
-            processed_df = preprocess_data(file_path, mapeamento_tickers_df)
-            if processed_df is not None:
-                all_data.append(processed_df)
-        else:
-            logging.warning(f"Arquivo não encontrado, pulando: {file_path}")
-
-    if not all_data:
-        logging.error("Nenhum dado consolidado foi processado.")
-        return None
-
-    consolidated_df = pd.concat(all_data, ignore_index=True)
-
-    # Juntar com o mapeamento de tickers para adicionar o nome da empresa
-    consolidated_df = pd.merge(consolidated_df, mapeamento_tickers_df[['CD_CVM', 'TICKER', 'NOME_EMPRESA_YAHOO']], on='CD_CVM', how='left')
-
-    # Renomear a coluna de nome da empresa para 'EMPRESA'
-    consolidated_df = consolidated_df.rename(columns={'NOME_EMPRESA_YAHOO': 'EMPRESA'})
-
-    # Selecionar e reordenar colunas relevantes
-    final_columns = [
-        'CD_CVM', 'DT_REFER', 'VERSAO', 'CD_CONTA', 'DS_CONTA', 'VL_CONTA', 'ST_CONTA', 'TICKER', 'EMPRESA'
-    ]
-    consolidated_df = consolidated_df[final_columns]
-
-    logging.info("Processamento de dados concluído.")
-    return consolidated_df
-
-if __name__ == '__main__':
-    # Exemplo de uso:
-    # Certifique-se de que os arquivos CSV estão no mesmo diretório ou ajuste o base_path
-    # Ex: python preprocess_to_db_light.py
-    processed_data = process_all_data()
-    if processed_data is not None:
-        print(processed_data.head())
-        print(processed_data['EMPRESA'].unique())
-    else:
-        print("Falha no processamento dos dados.")
-
-if processed_data is not None:
-    database_url = os.getenv('DATABASE_URL')
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
-    engine = create_engine(database_url)
-    processed_data.to_sql('financial_data', engine, if_exists='replace', index=False)
+if __name__ == "__main__":
+    import psutil
+    process = psutil.Process()
+    logger.info(f"Memória inicial: {process.memory_info().rss / (1024 * 1024):.2f} MB")
+    
+    main()
+    
+    logger.info(f"Memória final: {process.memory_info().rss / (1024 * 1024):.2f} MB")
