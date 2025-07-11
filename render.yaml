@@ -1,18 +1,56 @@
 # 📍 Caminho: modelfleuriet/render.yaml
-# ✅ VERSÃO FINAL SIMPLIFICADA E CORRETA PARA O SEU AMBIENTE
+# ✅ VERSÃO CORRIGIDA PARA O ERRO "invalid runtime"
 
 services:
+  # -------------------------------------------------------------------
+  # SERVIÇO 1: Job para Preparar o Banco de Dados
+  # -------------------------------------------------------------------
+  - type: job
+    name: db-setup
+    plan: free
+    runtime: python # <--- ADICIONADO PARA CORRIGIR O ERRO
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python preprocess_to_db_light.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: '3.10.13'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: modelfleuriet-db
+          property: connectionString
+
+  # -------------------------------------------------------------------
+  # SERVIÇO 2: Sua Aplicação Web Principal (o Site)
+  # -------------------------------------------------------------------
   - type: web
     name: modelfleuriet
     region: oregon
     plan: free
+    runtime: python # <--- ADICIONADO PARA CORRIGIR O ERRO
     buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn flask_app:app"
     envVars:
       - key: PYTHON_VERSION
-        value: 3.10.13
+        value: '3.10.13'
       - key: SECRET_KEY
         generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: modelfleuriet-db
+          property: connectionString
+
+  # -------------------------------------------------------------------
+  # SERVIÇO 3: Job para Atualizar o Valuation (Versão Gratuita)
+  # -------------------------------------------------------------------
+  - type: job
+    name: valuation-worker
+    plan: free
+    runtime: python # <--- ADICIONADO PARA CORRIGIR O ERRO
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python run_valuation_worker.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: '3.10.13'
       - key: DATABASE_URL
         fromDatabase:
           name: modelfleuriet-db
