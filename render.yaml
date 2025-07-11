@@ -1,33 +1,7 @@
 # 📍 Caminho: modelfleuriet/render.yaml
-# Versão final corrigida para o seu Blueprint
-
-# Define o nome do banco de dados uma vez para evitar repetição e erros
-# IMPORTANTE: Verifique se 'modelfleuriet-db' é o nome exato do seu banco no Render
-x-database-name: &db_name modelfleuriet-db
+# ✅ VERSÃO FINAL SIMPLIFICADA E CORRETA PARA O SEU AMBIENTE
 
 services:
-  # -------------------------------------------------------------------
-  # SERVIÇO 1: Job para Preparar o Banco de Dados (Passo Essencial que Faltava)
-  # -------------------------------------------------------------------
-  # Finalidade: Executar o script 'preprocess_to_db_light.py' para carregar
-  #             os dados financeiros no seu banco de dados vazio.
-  # -------------------------------------------------------------------
-  - type: job
-    name: db-setup
-    plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python preprocess_to_db_light.py"
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.13
-      - key: DATABASE_URL
-        fromDatabase:
-          name: *db_name
-          property: connectionString
-
-  # -------------------------------------------------------------------
-  # SERVIÇO 2: Sua Aplicação Web Principal (o Site)
-  # -------------------------------------------------------------------
   - type: web
     name: modelfleuriet
     region: oregon
@@ -38,27 +12,8 @@ services:
       - key: PYTHON_VERSION
         value: 3.10.13
       - key: SECRET_KEY
-        generateValue: true # Mais seguro: o Render gera a chave para você
+        generateValue: true
       - key: DATABASE_URL
         fromDatabase:
-          name: *db_name
-          property: connectionString # Mais seguro e eficiente: usa a conexão interna
-
-  # -------------------------------------------------------------------
-  # SERVIÇO 3: Job para Atualizar o Valuation (Versão Gratuita)
-  # -------------------------------------------------------------------
-  # Finalidade: Rodar 'run_valuation_worker.py' para recalcular os valuations.
-  #             Substituímos 'cron' (pago) por 'job' (gratuito).
-  # -------------------------------------------------------------------
-  - type: job
-    name: valuation-worker
-    plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python run_valuation_worker.py"
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.13
-      - key: DATABASE_URL
-        fromDatabase:
-          name: *db_name
+          name: modelfleuriet-db
           property: connectionString
