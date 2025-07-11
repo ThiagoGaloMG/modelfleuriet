@@ -7,44 +7,10 @@ services:
     runtime: python
     buildCommand: |
       pip install -r requirements.txt
-      python -c "from core.valuation_analysis import VALUATION_CONFIG; print('Valuation config:', VALUATION_CONFIG)"
     startCommand: gunicorn flask_app:app
     envVars:
       - key: SECRET_KEY
         value: fPBcJhn71BhNv8VgAgMw1L9Wz3Jse8hWxSpubPeuqk-
-      - key: PYTHON_VERSION
-        value: '3.10.13'
-      - key: DATABASE_URL
-        fromDatabase:
-          name: modelfleuriet-db
-          property: connectionString
-
-jobs:
-  - name: db-setup
-    type: run
-    region: oregon
-    plan: free
-    env: python
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python preprocess_to_db_light.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: '3.10.13'
-      - key: DATABASE_URL
-        fromDatabase:
-          name: modelfleuriet-db
-          property: connectionString
-
-  - name: valuation-worker
-    type: run
-    region: oregon
-    plan: free
-    env: python
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python run_valuation_worker.py
-    envVars:
       - key: PYTHON_VERSION
         value: '3.10.13'
       - key: DATABASE_URL
