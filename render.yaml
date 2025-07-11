@@ -1,53 +1,64 @@
-# 📍 Caminho: modelfleuriet/render.yaml
-# ✅ VERSÃO CORRIGIDA PARA O ERRO "invalid runtime"
+# render.yaml (raiz do projeto)
 
+# ==============================
+# Serviços Web
+# ==============================
 services:
-  # -------------------------------------------------------------------
-  # SERVIÇO 1: Job para Preparar o Banco de Dados
-  # -------------------------------------------------------------------
-  - type: Job
-    name: db-setup
-    plan: free
-    runtime: python # <--- ADICIONADO PARA CORRIGIR O ERRO
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python preprocess_to_db_light.py"
-    envVars:
-      - key: PYTHON_VERSION
-        value: '3.10.13'
-      - key: DATABASE_URL
-        fromDatabase:
-          name: modelfleuriet-db
-          property: connectionString
-
-  # -------------------------------------------------------------------
-  # SERVIÇO 2: Sua Aplicação Web Principal (o Site)
-  # -------------------------------------------------------------------
   - type: web
     name: modelfleuriet
     region: oregon
     plan: free
-    runtime: python # <--- ADICIONADO PARA CORRIGIR O ERRO
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "gunicorn flask_app:app"
+    env: python
+    runtime: python
+    buildCommand: |
+      pip install -r requirements.txt
+      # Sanity check: imprime a config de valuation
+      python - <<PYCODE
+from core.valuation_analysis import VALUATION_CONFIG
+print("Valuation config:", VALUATION_CONFIG)
+PYCODE
+    startCommand: gunicorn flask_app:app
+    envVars:
+      - key: SECRET_KEY
+        # Você pode gerar via painel ou deixar fixo
+        value: fPBcJhn71BhNv8VgAgMw1L9Wz3Jse8hWxSpubPeuqk-
+      - key: PYTHON_VERSION
+        value: '3.10.13'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: modelfleuriet-db      # Nome do serviço de banco que você criou no Render
+          property: connectionString
+
+# ==============================
+# Jobs (rodar uma vez ou manualmente)
+# ==============================
+jobs:
+  # Job para popular o financial_data (pode rodar sempre que quiser rebuild)
+  - name: db-setup
+    type: run
+    region: oregon
+    plan: free
+    env: python
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python preprocess_to_db_light.py
     envVars:
       - key: PYTHON_VERSION
         value: '3.10.13'
-      - key: SECRET_KEY
-        generateValue: true
       - key: DATABASE_URL
         fromDatabase:
           name: modelfleuriet-db
           property: connectionString
 
-  # -------------------------------------------------------------------
-  # SERVIÇO 3: Job para Atualizar o Valuation (Versão Gratuita)
-  # -------------------------------------------------------------------
-  - type: Job
-    name: valuation-worker
+  # Job para recalcular valuation (manualmente ou via API)
+  - name: valuation-worker
+    type: run
+    region: oregon
     plan: free
-    runtime: python # <--- ADICIONADO PARA CORRIGIR O ERRO
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python run_valuation_worker.py"
+    env: python
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_valuation_worker.py
     envVars:
       - key: PYTHON_VERSION
         value: '3.10.13'
