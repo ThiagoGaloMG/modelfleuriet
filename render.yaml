@@ -1,8 +1,3 @@
-# render.yaml (raiz do projeto)
-
-# ==============================
-# Serviços Web
-# ==============================
 services:
   - type: web
     name: modelfleuriet
@@ -12,28 +7,19 @@ services:
     runtime: python
     buildCommand: |
       pip install -r requirements.txt
-      # Sanity check: imprime a config de valuation
-      python - <<PYCODE
-from core.valuation_analysis import VALUATION_CONFIG
-print("Valuation config:", VALUATION_CONFIG)
-PYCODE
+      python -c "from core.valuation_analysis import VALUATION_CONFIG; print('Valuation config:', VALUATION_CONFIG)"
     startCommand: gunicorn flask_app:app
     envVars:
       - key: SECRET_KEY
-        # Você pode gerar via painel ou deixar fixo
         value: fPBcJhn71BhNv8VgAgMw1L9Wz3Jse8hWxSpubPeuqk-
       - key: PYTHON_VERSION
         value: '3.10.13'
       - key: DATABASE_URL
         fromDatabase:
-          name: modelfleuriet-db      # Nome do serviço de banco que você criou no Render
+          name: modelfleuriet-db
           property: connectionString
 
-# ==============================
-# Jobs (rodar uma vez ou manualmente)
-# ==============================
 jobs:
-  # Job para popular o financial_data (pode rodar sempre que quiser rebuild)
   - name: db-setup
     type: run
     region: oregon
@@ -50,7 +36,6 @@ jobs:
           name: modelfleuriet-db
           property: connectionString
 
-  # Job para recalcular valuation (manualmente ou via API)
   - name: valuation-worker
     type: run
     region: oregon
