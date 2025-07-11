@@ -5,7 +5,7 @@ services:
   # -------------------------------------------------------------------
   # SERVIÇO 1: Job para Preparar o Banco de Dados
   # -------------------------------------------------------------------
-  - type: Jobs
+  - type: Job
     name: db-setup
     plan: free
     runtime: python # <--- ADICIONADO PARA CORRIGIR O ERRO
@@ -42,7 +42,7 @@ services:
   # -------------------------------------------------------------------
   # SERVIÇO 3: Job para Atualizar o Valuation (Versão Gratuita)
   # -------------------------------------------------------------------
-  - type: Jobs
+  - type: Job
     name: valuation-worker
     plan: free
     runtime: python # <--- ADICIONADO PARA CORRIGIR O ERRO
