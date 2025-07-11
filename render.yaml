@@ -1,28 +1,64 @@
+# 📍 Caminho: modelfleuriet/render.yaml
+# Versão final corrigida para o seu Blueprint
+
+# Define o nome do banco de dados uma vez para evitar repetição e erros
+# IMPORTANTE: Verifique se 'modelfleuriet-db' é o nome exato do seu banco no Render
+x-database-name: &db_name modelfleuriet-db
+
 services:
+  # -------------------------------------------------------------------
+  # SERVIÇO 1: Job para Preparar o Banco de Dados (Passo Essencial que Faltava)
+  # -------------------------------------------------------------------
+  # Finalidade: Executar o script 'preprocess_to_db_light.py' para carregar
+  #             os dados financeiros no seu banco de dados vazio.
+  # -------------------------------------------------------------------
+  - type: job
+    name: db-setup
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python preprocess_to_db_light.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13
+      - key: DATABASE_URL
+        fromDatabase:
+          name: *db_name
+          property: connectionString
+
+  # -------------------------------------------------------------------
+  # SERVIÇO 2: Sua Aplicação Web Principal (o Site)
+  # -------------------------------------------------------------------
   - type: web
     name: modelfleuriet
     region: oregon
-    env: python
     plan: free
-    buildCommand: |
-      pip install -r requirements.txt
-      python -c "from core.valuation_analysis import VALUATION_CONFIG; print('Configuração de valuation:', VALUATION_CONFIG)"
+    buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn flask_app:app"
     envVars:
-      - key: DATABASE_URL
-        value: postgresql://modelfleuriet_user:A5ImVeUlPREqAvQeetMv9CCfFn1weRoI@dpg-d1m72be3jp1c73ede3s0-a.oregon-postgres.render.com/modelfleuriet_db_rhyp
       - key: PYTHON_VERSION
-        value: "3.10.13"
+        value: 3.10.13
       - key: SECRET_KEY
-        value: fPBcJhn71BhNv8VgAgMw1L9Wz3Jse8hWxSpubPeuqk-
-
-jobs:
-  - name: run-valuation
-    type: cron
-    schedule: "0 3 * * *"  # 3h UTC (00h BRT)
-    plan: free
-    envVars:
+        generateValue: true # Mais seguro: o Render gera a chave para você
       - key: DATABASE_URL
-        value: ${DATABASE_URL}
-    buildCommand: pip install -r requirements.txt
-    runCommand: python run_valuation_worker.py
+        fromDatabase:
+          name: *db_name
+          property: connectionString # Mais seguro e eficiente: usa a conexão interna
+
+  # -------------------------------------------------------------------
+  # SERVIÇO 3: Job para Atualizar o Valuation (Versão Gratuita)
+  # -------------------------------------------------------------------
+  # Finalidade: Rodar 'run_valuation_worker.py' para recalcular os valuations.
+  #             Substituímos 'cron' (pago) por 'job' (gratuito).
+  # -------------------------------------------------------------------
+  - type: job
+    name: valuation-worker
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python run_valuation_worker.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13
+      - key: DATABASE_URL
+        fromDatabase:
+          name: *db_name
+          property: connectionString
