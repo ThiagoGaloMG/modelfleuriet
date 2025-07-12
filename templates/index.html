@@ -3,749 +3,226 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Análise 360° - Fleuriet & Valuation</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <title>Analisador Fleuriet - B3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
-        .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(15px); border: 1px solid rgba(226, 232, 240, 0.7); border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); }
-        .form-card { background: white; border-radius: 20px; padding: 2rem; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.1); }
-        .loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; opacity: 0; visibility: hidden; transition: all 0.3s ease; }
-        .loading-overlay.active { opacity: 1; visibility: visible; }
-        .loading-spinner { width: 60px; height: 60px; border: 4px solid rgba(255, 255, 255, 0.3); border-top: 4px solid #4f46e5; border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .tab-item { padding: 0.75rem 1rem; border-radius: 0.75rem; font-weight: 600; color: #4b5563; transition: all 0.3s ease; display: inline-flex; align-items: center; border: 2px solid transparent; cursor: pointer; }
-        .tab-item:hover { background-color: #f3f4f6; color: #1f2937; }
-        .tab-item.active { background-color: #ffffff; color: #4f46e5; border-color: #4f46e5; box-shadow: 0 4px 14px -2px rgba(79, 70, 229, 0.2); }
-        .tab-pane { display: none; }
-        .tab-pane.active { display: block; animation: fadeIn 0.5s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .data-card { background-color: white; border-radius: 0.75rem; padding: 1.5rem; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,.05); }
-        .enhanced-table { width: 100%; background: white; border-radius: 12px; overflow: hidden; }
-        .enhanced-table thead { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; }
-        .enhanced-table th, .enhanced-table td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
-        .enhanced-table tbody tr:last-child td { border-bottom: 0; }
-        .sortable:hover { background-color: rgba(255,255,255,0.1); cursor: pointer; }
-        .nav-item { padding: 0.5rem 1rem; margin: 0 0.25rem; cursor: pointer; border-radius: 0.5rem; transition: all 0.2s; }
-        .nav-item:hover { background-color: #eef2ff; }
-        .nav-item.active { background-color: #4f46e5; color: white; }
-        .badge { display: inline-flex; align-items: center; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem; font-weight: 600; }
-        .badge-positive { background-color: #ecfdf5; color: #059669; }
-        .badge-negative { background-color: #fee2e2; color: #dc2626; }
-        .badge-neutral { background-color: #e5e7eb; color: #4b5563; }
-        .fade-in { animation: fadeIn 0.5s ease-in-out; }
-        .highlight-row { background-color: #f5f3ff !important; }
+        body { background-color: #f3f4f6; font-family: 'Inter', sans-serif; }
+        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
     </style>
 </head>
 <body class="antialiased text-gray-800">
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="loading-spinner"></div>
-        <p class="text-white mt-4 text-lg" id="loadingText">Processando...</p>
-    </div>
 
-    <div class="min-h-screen py-8 px-4">
-        <div class="container mx-auto max-w-7xl">
-            <header class="text-center mb-8">
-                <h1 class="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">Análise 360° de Empresas</h1>
-                <p class="text-lg md:text-xl text-gray-600 mt-3">Combine a saúde financeira do Modelo Fleuriet com o potencial de Valuation.</p>
-            </header>
+    <div class="container mx-auto p-4 md:p-8 max-w-6xl">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-900">Análise Dinâmica de Empresas</h1>
+            <p class="text-lg text-gray-600 mt-2">Veja a evolução financeira e identifique o Efeito Tesoura.</p>
+        </header>
 
-            <div class="form-card mb-8">
-                <form id="analysisForm" action="/" method="POST" class="space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-                        <div class="md:col-span-2">
-                            <label for="cvm_code" class="block text-sm font-semibold text-gray-700 mb-2">Selecione a Empresa</label>
-                            <select name="cvm_code" id="cvm_code" required class="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none transition-colors">
-                                <option value="" disabled {% if not selected_company %}selected{% endif %}>Escolha uma empresa...</option>
-                                {% for company in companies %}
-                                    <option value="{{ company.CD_CVM }}" {% if selected_company == company.CD_CVM|string %}selected{% endif %}>
-                                        {{ company.TICKER }} - {{ company.NOME_EMPRESA }}
-                                    </option>
+        <div class="card p-6 mb-8">
+            <form action="/" method="POST" class="flex flex-col md:flex-row items-end justify-center gap-4">
+                <div class="w-full md:flex-1">
+                    <label for="cvm_code" class="block text-sm font-medium text-gray-700">Selecione a Empresa</label>
+                    <select name="cvm_code" id="cvm_code" required
+                           class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="" disabled selected>Escolha um ticker...</option>
+                        {% for company in companies %}
+                            <option value="{{ company.CD_CVM }}">{{ company.TICKER }} - {{ company.DENOM_CIA_F }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="w-full md:w-auto">
+                     <button type="submit"
+                        class="w-full md:w-auto bg-indigo-600 text-white font-bold py-2.5 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
+                        Analisar Período
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        {% if error %}
+            <div class="card p-4 text-center bg-red-100 border border-red-400 text-red-700 rounded-lg">
+                <strong>Erro:</strong> {{ error }}
+            </div>
+        {% endif %}
+
+        {% if results %}
+            <div class="space-y-8">
+                <h2 class="text-3xl font-bold text-center text-gray-800">{{ results.company_name }} ({{ results.cvm_code }})</h2>
+
+                <!-- Card do Gráfico - Efeito Tesoura -->
+                <div class="card p-6">
+                    <h3 class="text-xl font-bold mb-4">Evolução Dinâmica (Efeito Tesoura)</h3>
+                    <p class="text-sm text-gray-600 mb-4">
+                        O <strong>Efeito Tesoura</strong> ocorre quando a Necessidade de Capital de Giro (NCG) cresce mais rápido que o Capital de Giro (CDG), "abrindo a tesoura" e consumindo a tesouraria. Um cruzamento da linha azul (NCG) acima da verde (CDG) é um forte sinal de alerta.
+                    </p>
+                    <div class="h-96">
+                        <canvas id="tesouraChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Tabela Comparativa Anual -->
+                <div class="card p-6">
+                    <h3 class="text-xl font-bold mb-4">Resumo Comparativo Anual</h3>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indicador</th>
+                                    {% for res in results.yearly_results %}
+                                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{{ res.year }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                {% set indicators_to_show = {
+                                    'Estrutura': 'structure', 'NCG': 'base_indicators.NCG', 'CDG': 'base_indicators.CDG', 'Tesouraria': 'base_indicators.T',
+                                    'ILD': 'advanced_indicators.ILD', 'ROIC (%)': 'advanced_indicators.ROIC', 'Z-Score': 'advanced_indicators.Z_Score', 'Risco Z-Score': 'advanced_indicators.Z_Risk'
+                                } %}
+                                {% for name, key in indicators_to_show.items() %}
+                                <tr>
+                                    <td class="px-4 py-4 whitespace-nowrap font-medium text-gray-900">{{ name }}</td>
+                                    {% for res in results.yearly_results %}
+                                    <td class="px-4 py-4 whitespace-nowrap text-right text-gray-700">
+                                        {% set val = res %}
+                                        {% for k in key.split('.') %}{% set val = val[k] %}{% endfor %}
+                                        
+                                        {% if val is number and val|abs > 1000 %}
+                                            {{ "{:,.0f}".format(val)|replace(',', '.') }}
+                                        {% elif val is number and 'ROIC' in name %}
+                                            {{ "%.2f"|format(val * 100) }}
+                                        {% elif val is number %}
+                                            {{ "%.2f"|format(val) }}
+                                        {% else %}
+                                            {{ val }}
+                                        {% endif %}
+                                    </td>
+                                    {% endfor %}
+                                </tr>
                                 {% endfor %}
-                            </select>
-                        </div>
-                        <div>
-                            <label for="start_year" class="block text-sm font-semibold text-gray-700 mb-2">Ano Início</label>
-                            <select name="start_year" id="start_year" required class="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none">
-                                {% for year in range(2020, 2025) %}<option value="{{ year }}" {% if start_year == year or (not start_year and year == 2020) %}selected{% endif %}>{{ year }}</option>{% endfor %}
-                            </select>
-                        </div>
-                        <div>
-                            <label for="end_year" class="block text-sm font-semibold text-gray-700 mb-2">Ano Fim</label>
-                            <select name="end_year" id="end_year" required class="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-lg focus:border-indigo-500 focus:outline-none">
-                                {% for year in range(2020, 2025) %}<option value="{{ year }}" {% if end_year == year or (not end_year and year == 2024) %}selected{% endif %}>{{ year }}</option>{% endfor %}
-                            </select>
-                        </div>
+                            </tbody>
+                        </table>
                     </div>
-                    <div class="flex justify-center">
-                        <button type="submit" id="submitBtn" class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-8 rounded-lg shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
-                            <span id="btnText">Analisar</span>
-                        </button>
+                </div>
+                
+                <!-- Card de Ciclos Operacionais -->
+                <div class="card p-6">
+                    <h3 class="text-xl font-bold mb-4">Ciclos Operacionais (Prazos Médios)</h3>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prazo (dias)</th>
+                                    {% for res in results.yearly_results %}
+                                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">{{ res.year }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                {% set cycle_indicators = {
+                                    'Recebimento (PMR)': 'advanced_indicators.PMR', 'Estocagem (PME)': 'advanced_indicators.PME', 
+                                    'Pagamento (PMP)': 'advanced_indicators.PMP', 'Ciclo Financeiro': 'advanced_indicators.Ciclo_Financeiro'
+                                } %}
+                                {% for name, key in cycle_indicators.items() %}
+                                <tr class="{{ 'bg-gray-100 font-bold' if 'Ciclo' in name else '' }}">
+                                    <td class="px-4 py-4 whitespace-nowrap font-medium">{{ name }}</td>
+                                    {% for res in results.yearly_results %}
+                                    <td class="px-4 py-4 whitespace-nowrap text-right">
+                                        {% set val = res %}
+                                        {% for k in key.split('.') %}{% set val = val[k] %}{% endfor %}
+                                        {{ "%.0f"|format(val) }}
+                                    </td>
+                                    {% endfor %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
-                </form>
+                </div>
             </div>
 
-            {% if fleuriet_results %}
-                <div id="results-container" class="fade-in space-y-8">
-                    <div class="text-center glass-card p-6">
-                        <h2 class="text-3xl font-bold text-gray-800 mb-2">{{ fleuriet_results.company_name }}</h2>
-                        <p class="text-lg text-gray-600">CVM: {{ fleuriet_results.cvm_code }} | Ticker: {{ fleuriet_results.ticker }}</p>
-                    </div>
-
-                    <div class="bg-white/80 backdrop-blur-sm rounded-lg shadow-md p-2 sticky top-4 z-50">
-                        <nav id="analysis-tabs" class="flex justify-center flex-wrap gap-2 sm:gap-4">
-                            <button data-tab="fleuriet" class="tab-item active">Saúde Financeira (Fleuriet)</button>
-                            <button data-tab="valuation" class="tab-item">Potencial (Valuation)</button>
-                        </nav>
-                    </div>
-
-                    <div class="tab-pane active" id="fleuriet-tab">
-                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <div class="data-card">
-                                <h3 class="text-xl font-bold text-gray-800 mb-4">Indicadores Chave</h3>
-                                <div class="space-y-4">
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-gray-600">Situação Financeira:</span>
-                                        <span class="font-semibold {% if fleuriet_results.financial_status == 'Equilíbrio Financeiro' %}text-green-600{% else %}text-red-600{% endif %}">
-                                            {{ fleuriet_results.financial_status }}
-                                        </span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-gray-600">NCG/Ativos:</span>
-                                        <span class="font-semibold">{{ format_percentage(fleuriet_results.ncg_percentage) }}</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-gray-600">CDG/Ativos:</span>
-                                        <span class="font-semibold">{{ format_percentage(fleuriet_results.cdg_percentage) }}</span>
-                                    </div>
-                                    <div class="flex justify-between items-center">
-                                        <span class="text-gray-600">Tesouraria/Ativos:</span>
-                                        <span class="font-semibold">{{ format_percentage(fleuriet_results.t_percentage) }}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="data-card lg:col-span-2">
-                                <h3 class="text-xl font-bold text-gray-800 mb-4">Evolução da Tesouraria</h3>
-                                <div class="h-80">
-                                    <canvas id="tesouraChart"></canvas>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="data-card mt-6">
-                            <h3 class="text-xl font-bold text-gray-800 mb-4">Análise Detalhada</h3>
-                            <div class="overflow-x-auto">
-                                <table class="enhanced-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Ano</th>
-                                            <th>NCG</th>
-                                            <th>CDG</th>
-                                            <th>Tesouraria</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% for year_data in fleuriet_results.yearly_data %}
-                                        <tr>
-                                            <td>{{ year_data.year }}</td>
-                                            <td>{{ format_currency(year_data.ncg) }}</td>
-                                            <td>{{ format_currency(year_data.cdg) }}</td>
-                                            <td>{{ format_currency(year_data.t) }}</td>
-                                            <td>
-                                                <span class="badge {% if year_data.status == 'Equilíbrio' %}badge-positive{% elif year_data.status == 'Desequilíbrio' %}badge-negative{% else %}badge-neutral{% endif %}">
-                                                    {{ year_data.status }}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="tab-pane" id="valuation-tab">
-                        <div class="data-card">
-                            <div class="flex items-center justify-between mb-6">
-                                <h3 class="text-xl font-bold text-gray-800">Ranking de Valuation</h3>
-                                <div class="flex items-center space-x-4">
-                                    <button id="refreshValuationBtn" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
-                                        Atualizar Dados
-                                    </button>
-                                    <div class="text-sm text-gray-500">Atualizado em: {% if valuation_update_time %}{{ valuation_update_time.strftime('%d/%m/%Y %H:%M') }}{% else %}N/D{% endif %}</div>
-                                </div>
-                            </div>
-                            <div id="valuation-content">
-                                <div class="text-center py-8">
-                                    <div class="loading-spinner mx-auto mb-4"></div>
-                                    <p class="text-gray-600">Carregando dados de valuation...</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            {% elif error %}
-                <div class="glass-card p-6 text-center border-2 border-red-200">
-                    <h3 class="text-xl font-bold text-red-700">Erro na Análise</h3>
-                    <p class="text-red-600 mt-2">{{ error }}</p>
-                </div>
-            {% endif %}
-            
-            <footer class="text-center mt-12 pt-6 border-t border-gray-200">
-                <p class="text-xs text-gray-500 max-w-4xl mx-auto"><strong>Disclaimer:</strong> As informações apresentadas destinam-se a fins educacionais e não constituem recomendação de investimento.</p>
-            </footer>
-        </div>
-    </div>
-
-    <script>
-        // --- ESTADO GLOBAL E VARIÁVEIS ---
-        const fleurietResults = JSON.parse('{{ fleuriet_results | tojson | safe if fleuriet_results else 'null' }}');
-        const companiesList = JSON.parse('{{ companies | tojson | safe if companies else '[]' }}');
-        let valuationData = null;
-        let charts = {};
-        let currentValuationView = 'overview';
-        let currentTicker = '{{ fleuriet_results.ticker if fleuriet_results else '' }}';
-        let sortConfig = { key: 'Upside', direction: 'desc' };
-
-        // --- FUNÇÕES DE FORMATAÇÃO ---
-        const formatCurrency = (v) => v === null || typeof v === 'undefined' || isNaN(v) ? 'N/D' : `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        const formatPercentage = (v) => v === null || typeof v === 'undefined' || isNaN(v) ? 'N/D' : `${(v * 100).toFixed(2)}%`;
-        const getSemanticColor = (v) => v === null || typeof v === 'undefined' || isNaN(v) ? 'text-gray-600' : (v >= 0 ? 'text-green-600' : 'text-red-600');
-
-        // --- INICIALIZAÇÃO ---
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeTabs();
-            if (fleurietResults) {
-                renderFleurietChart();
-                loadAndRenderValuationData();
-            }
-            
-            // Event listener para o botão de atualizar dados
-            const refreshBtn = document.getElementById('refreshValuationBtn');
-            if (refreshBtn) {
-                refreshBtn.addEventListener('click', runValuationWorker);
-            }
-
-            // Mostrar loading ao submeter formulário
-            document.getElementById('analysisForm').addEventListener('submit', () => {
-                document.getElementById('loadingOverlay').classList.add('active');
-            });
-        });
-
-        // --- CONTROLE DE ABAS ---
-        function initializeTabs() {
-            const tabs = document.querySelectorAll('.tab-item');
-            const panes = document.querySelectorAll('.tab-pane');
-            
-            tabs.forEach(tab => {
-                tab.addEventListener('click', () => {
-                    // Atualiza estado das abas
-                    tabs.forEach(t => t.classList.remove('active'));
-                    panes.forEach(p => p.classList.remove('active'));
-                    
-                    // Ativa aba selecionada
-                    tab.classList.add('active');
-                    const targetPane = document.getElementById(tab.dataset.tab + '-tab');
-                    if (targetPane) targetPane.classList.add('active');
-                    
-                    // Carrega dados se for a aba de valuation
-                    if (tab.dataset.tab === 'valuation' && !valuationData) {
-                        loadAndRenderValuationData();
-                    }
-                });
-            });
-        }
-        
-        // --- RENDERIZAÇÃO DA ABA FLEURIET ---
-        function renderFleurietChart() {
-            destroyChart('tesouraChart');
-            const chartData = fleurietResults?.chart_data;
-            const canvas = document.getElementById('tesouraChart');
-            if (chartData?.labels?.length > 0 && canvas) {
-                const ctx = canvas.getContext('2d');
-                charts['tesouraChart'] = new Chart(ctx, {
+            <script>
+                const chartData = JSON.parse('{{ chart_data_json | safe }}');
+                const ctx = document.getElementById('tesouraChart').getContext('2d');
+                new Chart(ctx, {
                     type: 'line',
                     data: {
                         labels: chartData.labels,
                         datasets: [
-                            { 
-                                label: 'NCG', 
-                                data: chartData.ncg, 
-                                borderColor: '#3b82f6', 
-                                borderWidth: 3, 
-                                fill: false, 
-                                tension: 0.1, 
-                                pointRadius: 5, 
-                                pointBackgroundColor: '#3b82f6' 
+                            {
+                                label: 'NCG (Necessidade de Capital de Giro)',
+                                data: chartData.ncg,
+                                borderColor: 'rgba(59, 130, 246, 1)',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                borderWidth: 3,
+                                fill: false,
+                                tension: 0.1
                             },
-                            { 
-                                label: 'CDG', 
-                                data: chartData.cdg, 
-                                borderColor: '#10b981', 
-                                borderWidth: 3, 
-                                fill: false, 
-                                tension: 0.1, 
-                                pointRadius: 5, 
-                                pointBackgroundColor: '#10b981' 
+                            {
+                                label: 'CDG (Capital de Giro)',
+                                data: chartData.cdg,
+                                borderColor: 'rgba(16, 185, 129, 1)',
+                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                borderWidth: 3,
+                                fill: false,
+                                tension: 0.1
                             },
-                            { 
-                                label: 'Tesouraria', 
-                                data: chartData.t, 
-                                borderColor: '#8b5cf6', 
-                                borderWidth: 2, 
-                                borderDash: [5, 5], 
-                                fill: false, 
-                                tension: 0.1, 
-                                pointRadius: 5, 
-                                pointBackgroundColor: '#8b5cf6' 
+                            {
+                                label: 'Tesouraria (T)',
+                                data: chartData.t,
+                                borderColor: 'rgba(139, 92, 246, 1)',
+                                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                                borderWidth: 2,
+                                borderDash: [5, 5],
+                                fill: false,
+                                tension: 0.1
                             }
                         ]
                     },
-                    options: { 
-                        responsive: true, 
+                    options: {
+                        responsive: true,
                         maintainAspectRatio: false,
-                        plugins: {
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        return `${context.dataset.label}: ${formatCurrency(context.raw)}`;
+                        scales: {
+                            y: {
+                                ticks: {
+                                    callback: function(value, index, values) {
+                                        if (Math.abs(value) >= 1.0e+9) {
+                                            return 'R$ ' + (value / 1.0e+9).toFixed(1) + 'B';
+                                        } else if (Math.abs(value) >= 1.0e+6) {
+                                            return 'R$ ' + (value / 1.0e+6).toFixed(1) + 'M';
+                                        } else if (Math.abs(value) >= 1.0e+3) {
+                                            return 'R$ ' + (value / 1.0e+3).toFixed(1) + 'k';
+                                        }
+                                        return 'R$ ' + value;
                                     }
                                 }
                             }
                         },
-                        scales: {
-                            y: {
-                                ticks: {
-                                    callback: function(value) {
-                                        return formatCurrency(value);
+                        plugins: {
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    label: function(context) {
+                                        let label = context.dataset.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        if (context.parsed.y !== null) {
+                                            label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed.y);
+                                        }
+                                        return label;
                                     }
                                 }
                             }
                         }
                     }
                 });
-            }
-        }
+            </script>
 
-        // --- RENDERIZAÇÃO DA ABA VALUATION ---
-        async function loadAndRenderValuationData() {
-            const placeholder = document.getElementById('valuation-content');
-            placeholder.innerHTML = `
-                <div class="text-center py-8">
-                    <div class="loading-spinner mx-auto mb-4"></div>
-                    <p class="text-gray-600">Carregando dados de valuation...</p>
-                </div>
-            `;
-            
-            try {
-                const response = await fetch('/get_valuation_data');
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({error: 'Erro desconhecido'}));
-                    throw new Error(errorData.error || `Falha na API: ${response.statusText}`);
-                }
-                valuationData = await response.json();
-                renderValuationSubView();
-            } catch (error) {
-                console.error("Erro ao carregar dados de valuation:", error);
-                placeholder.innerHTML = `
-                    <div class="p-4 bg-red-100 text-red-700 rounded-lg">
-                        <p class="font-semibold">Erro ao carregar dados:</p>
-                        <p>${error.message}</p>
-                        <button onclick="loadAndRenderValuationData()" class="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
-                            Tentar novamente
-                        </button>
-                    </div>
-                `;
-            }
-        }
+        {% endif %}
+    </div>
 
-        // Função para executar o worker manualmente
-        async function runValuationWorker() {
-            const btn = document.getElementById('refreshValuationBtn');
-            const originalText = btn.textContent;
-            
-            try {
-                btn.textContent = 'Processando...';
-                btn.disabled = true;
-                
-                const response = await fetch('/run_valuation_worker', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    // Recarrega os dados após executar o worker
-                    valuationData = null;
-                    await loadAndRenderValuationData();
-                    showToast('Dados de valuation atualizados com sucesso!', 'success');
-                } else {
-                    throw new Error(result.error || 'Erro desconhecido');
-                }
-            } catch (error) {
-                console.error('Erro ao executar worker:', error);
-                showToast('Erro ao atualizar dados: ' + error.message, 'error');
-            } finally {
-                btn.textContent = originalText;
-                btn.disabled = false;
-            }
-        }
-
-        function renderValuationSubView() {
-            const container = document.getElementById('valuation-content');
-            if (!valuationData || valuationData.length === 0) {
-                container.innerHTML = `
-                    <div class="glass-card p-6 text-center">
-                        <p class="text-gray-600">Nenhum dado de valuation disponível ou que passou nos filtros de sanidade.</p>
-                        <button onclick="runValuationWorker()" class="mt-4 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
-                            Executar Análise
-                        </button>
-                    </div>
-                `;
-                return;
-            }
-            
-            const nav = `
-                <nav id="valuation-navigation" class="flex justify-center items-center border-b border-gray-200 mb-8 bg-white/70 backdrop-blur-sm rounded-lg shadow-sm">
-                    <div data-view="overview" class="nav-item ${currentValuationView === 'overview' ? 'active' : ''}">Visão Geral</div>
-                    <div data-view="ranking" class="nav-item ${currentValuationView === 'ranking' ? 'active' : ''}">Ranking Completo</div>
-                    <div data-view="details" class="nav-item ${currentValuationView === 'details' ? 'active' : ''}">Análise Detalhada</div>
-                </nav>
-                <div id="valuation-app-content" class="mt-8"></div>
-            `;
-            container.innerHTML = nav;
-            
-            document.querySelectorAll('#valuation-navigation .nav-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    currentValuationView = item.dataset.view;
-                    renderValuationSubView();
-                });
-            });
-
-            const contentEl = document.getElementById('valuation-app-content');
-            const selectedCvm = fleurietResults?.cvm_code;
-            const companyInfo = companiesList.find(c => c.CD_CVM == selectedCvm);
-            currentTicker = companyInfo ? companyInfo.TICKER : null;
-            
-            switch (currentValuationView) {
-                case 'overview': 
-                    contentEl.innerHTML = getValuationOverviewHTML(valuationData); 
-                    break;
-                case 'ranking': 
-                    contentEl.innerHTML = getValuationRankingHTML(valuationData); 
-                    break;
-                case 'details': 
-                    contentEl.innerHTML = getValuationDetailsHTML(valuationData, currentTicker); 
-                    break;
-                default: 
-                    contentEl.innerHTML = getValuationOverviewHTML(valuationData);
-            }
-            
-            // Adiciona highlight para a empresa selecionada
-            if (currentTicker && currentValuationView !== 'details') {
-                const rows = document.querySelectorAll(`[data-ticker="${currentTicker}"]`);
-                rows.forEach(row => row.classList.add('highlight-row'));
-            }
-        }
-
-        function getValuationOverviewHTML(data) {
-            // Filtra os 10 melhores e piores por Upside
-            const sortedData = [...data].sort((a, b) => b.Upside - a.Upside);
-            const top10 = sortedData.slice(0, 10);
-            const bottom10 = sortedData.slice(-10).reverse();
-            
-            // Encontra a empresa atual se existir
-            const currentCompany = currentTicker ? 
-                data.find(item => item.Ticker === currentTicker) : null;
-            
-            return `
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="data-card">
-                        <h4 class="text-lg font-semibold text-gray-800 mb-4">Top 10 - Maior Potencial (Upside)</h4>
-                        ${getRankingTableHTML(top10)}
-                    </div>
-                    <div class="data-card">
-                        <h4 class="text-lg font-semibold text-gray-800 mb-4">Bottom 10 - Menor Potencial (Upside)</h4>
-                        ${getRankingTableHTML(bottom10)}
-                    </div>
-                </div>
-                
-                ${currentCompany ? `
-                <div class="data-card mt-6">
-                    <h4 class="text-lg font-semibold text-gray-800 mb-4">Posição da Empresa Selecionada</h4>
-                    ${getCompanyCardHTML(currentCompany)}
-                </div>
-                ` : ''}
-                
-                <div class="data-card mt-6">
-                    <h4 class="text-lg font-semibold text-gray-800 mb-4">Distribuição de Upside</h4>
-                    <div class="h-64">
-                        <canvas id="upsideDistributionChart"></canvas>
-                    </div>
-                </div>
-            `;
-        }
-
-        function getValuationRankingHTML(data) {
-            const sortedData = [...data].sort((a, b) => {
-                if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
-                if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
-                return 0;
-            });
-            
-            return `
-                <div class="data-card">
-                    <div class="flex justify-between items-center mb-4">
-                        <div class="relative w-64">
-                            <input type="text" id="searchValuation" placeholder="Filtrar por ticker ou nome..." 
-                                class="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                            <svg class="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                            </svg>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <span class="text-sm text-gray-600">Ordenar por:</span>
-                            <select id="sortValuation" class="border rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                                <option value="Upside" ${sortConfig.key === 'Upside' ? 'selected' : ''}>Upside</option>
-                                <option value="ROIC" ${sortConfig.key === 'ROIC' ? 'selected' : ''}>ROIC</option>
-                                <option value="WACC" ${sortConfig.key === 'WACC' ? 'selected' : ''}>WACC</option>
-                                <option value="Spread" ${sortConfig.key === 'Spread' ? 'selected' : ''}>Spread (ROIC-WACC)</option>
-                            </select>
-                            <button id="sortDirection" class="p-1 rounded-lg bg-gray-100 hover:bg-gray-200">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                        d="${sortConfig.direction === 'asc' ? 'M19 9l-7 7-7-7' : 'M5 15l7-7 7 7'}"></path>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="overflow-x-auto">
-                        <table class="enhanced-table">
-                            <thead>
-                                <tr>
-                                    <th class="sortable" data-key="Ticker">Ticker</th>
-                                    <th class="sortable" data-key="Nome">Nome</th>
-                                    <th class="sortable" data-key="Upside">Upside</th>
-                                    <th class="sortable" data-key="ROIC">ROIC</th>
-                                    <th class="sortable" data-key="WACC">WACC</th>
-                                    <th class="sortable" data-key="Spread">Spread</th>
-                                    <th class="sortable" data-key="Preco_Atual">Preço Atual</th>
-                                    <th class="sortable" data-key="Preco_Justo">Preço Justo</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${sortedData.map(item => `
-                                    <tr data-ticker="${item.Ticker}" class="${item.Ticker === currentTicker ? 'highlight-row' : ''}">
-                                        <td>${item.Ticker}</td>
-                                        <td>${item.Nome}</td>
-                                        <td class="${getSemanticColor(item.Upside)} font-semibold">${formatPercentage(item.Upside)}</td>
-                                        <td class="${getSemanticColor(item.ROIC)}">${formatPercentage(item.ROIC)}</td>
-                                        <td>${formatPercentage(item.WACC)}</td>
-                                        <td class="${getSemanticColor(item.Spread)}">${formatPercentage(item.Spread)}</td>
-                                        <td>${formatCurrency(item.Preco_Atual)}</td>
-                                        <td>${formatCurrency(item.Preco_Justo)}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
-        }
-
-        function getValuationDetailsHTML(data, ticker) {
-            if (!ticker) {
-                return `
-                    <div class="glass-card p-6 text-center">
-                        <p class="text-gray-600">Nenhuma empresa selecionada para análise detalhada.</p>
-                        <p class="mt-2">Selecione uma empresa no formulário acima para ver sua análise detalhada.</p>
-                    </div>
-                `;
-            }
-            
-            const companyData = data.find(item => item.Ticker === ticker);
-            if (!companyData) {
-                return `
-                    <div class="glass-card p-6 text-center">
-                        <p class="text-gray-600">Dados de valuation não disponíveis para ${ticker}.</p>
-                        <p class="mt-2">Esta empresa pode ter sido filtrada por não atender aos critérios de qualidade.</p>
-                    </div>
-                `;
-            }
-            
-            return `
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="data-card">
-                        <h4 class="text-lg font-semibold text-gray-800 mb-4">Informações Básicas</h4>
-                        ${getCompanyCardHTML(companyData, true)}
-                    </div>
-                    
-                    <div class="data-card lg:col-span-2">
-                        <h4 class="text-lg font-semibold text-gray-800 mb-4">Métricas de Valuation</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div class="bg-gray-50 p-4 rounded-lg">
-                                <p class="text-sm text-gray-500">Preço Atual</p>
-                                <p class="text-xl font-bold">${formatCurrency(companyData.Preco_Atual)}</p>
-                            </div>
-                            <div class="bg-gray-50 p-4 rounded-lg">
-                                <p class="text-sm text-gray-500">Preço Justo</p>
-                                <p class="text-xl font-bold ${getSemanticColor(companyData.Upside)}">${formatCurrency(companyData.Preco_Justo)}</p>
-                            </div>
-                            <div class="bg-gray-50 p-4 rounded-lg">
-                                <p class="text-sm text-gray-500">Upside</p>
-                                <p class="text-xl font-bold ${getSemanticColor(companyData.Upside)}">${formatPercentage(companyData.Upside)}</p>
-                            </div>
-                            <div class="bg-gray-50 p-4 rounded-lg">
-                                <p class="text-sm text-gray-500">Market Cap</p>
-                                <p class="text-xl font-bold">${formatCurrency(companyData.Market_Cap)}</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="data-card mt-6">
-                    <h4 class="text-lg font-semibold text-gray-800 mb-4">Cálculo do WACC</h4>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <p class="text-sm text-gray-500">Custo do Capital Próprio (Ke)</p>
-                            <p class="text-xl font-bold">${formatPercentage(companyData.WACC * 0.7)}</p>
-                        </div>
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <p class="text-sm text-gray-500">Custo da Dívida (Kd)</p>
-                            <p class="text-xl font-bold">${formatPercentage(companyData.WACC * 0.3)}</p
-                        </div>
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <p class="text-sm text-gray-500">WACC</p>
-                            <p class="text-xl font-bold">${formatPercentage(companyData.WACC)}</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="data-card mt-6">
-                    <h4 class="text-lg font-semibold text-gray-800 mb-4">Cálculo do EVA</h4>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <p class="text-sm text-gray-500">ROIC</p>
-                            <p class="text-xl font-bold ${getSemanticColor(companyData.ROIC)}">${formatPercentage(companyData.ROIC)}</p>
-                        </div>
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <p class="text-sm text-gray-500">WACC</p>
-                            <p class="text-xl font-bold">${formatPercentage(companyData.WACC)}</p>
-                        </div>
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <p class="text-sm text-gray-500">Spread (ROIC-WACC)</p>
-                            <p class="text-xl font-bold ${getSemanticColor(companyData.Spread)}">${formatPercentage(companyData.Spread)}</p>
-                        </div>
-                        <div class="bg-gray-50 p-4 rounded-lg md:col-span-3">
-                            <p class="text-sm text-gray-500">Economic Value Added (EVA)</p>
-                            <p class="text-xl font-bold ${getSemanticColor(companyData.EVA)}">${formatCurrency(companyData.EVA)}</p>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-
-        function getCompanyCardHTML(companyData, fullInfo = false) {
-            return `
-                <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                    <div class="p-4">
-                        <div class="flex items-start">
-                            <div class="flex-1">
-                                <h5 class="text-lg font-bold text-gray-800">${companyData.Nome}</h5>
-                                <p class="text-gray-600">${companyData.Ticker}</p>
-                            </div>
-                            <div class="text-right">
-                                <span class="badge ${companyData.Upside >= 0 ? 'badge-positive' : 'badge-negative'}">
-                                    ${formatPercentage(companyData.Upside)}
-                                </span>
-                            </div>
-                        </div>
-                        
-                        ${fullInfo ? `
-                        <div class="mt-4 grid grid-cols-2 gap-2">
-                            <div>
-                                <p class="text-sm text-gray-500">Preço Atual</p>
-                                <p class="font-semibold">${formatCurrency(companyData.Preco_Atual)}</p>
-                            </div>
-                            <div>
-                                <p class="text-sm text-gray-500">Preço Justo</p>
-                                <p class="font-semibold ${getSemanticColor(companyData.Upside)}">${formatCurrency(companyData.Preco_Justo)}</p>
-                            </div>
-                            <div>
-                                <p class="text-sm text-gray-500">ROIC</p>
-                                <p class="font-semibold ${getSemanticColor(companyData.ROIC)}">${formatPercentage(companyData.ROIC)}</p>
-                            </div>
-                            <div>
-                                <p class="text-sm text-gray-500">WACC</p>
-                                <p class="font-semibold">${formatPercentage(companyData.WACC)}</p>
-                            </div>
-                        </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
-        }
-
-        function getRankingTableHTML(data) {
-            return `
-                <div class="overflow-x-auto">
-                    <table class="w-full">
-                        <thead>
-                            <tr class="bg-gray-100">
-                                <th class="text-left py-2 px-3">#</th>
-                                <th class="text-left py-2 px-3">Ticker</th>
-                                <th class="text-left py-2 px-3">Upside</th>
-                                <th class="text-left py-2 px-3">Preço Justo</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.map((item, index) => `
-                                <tr class="border-b border-gray-200 ${item.Ticker === currentTicker ? 'bg-indigo-50' : ''}" 
-                                    data-ticker="${item.Ticker}">
-                                    <td class="py-2 px-3">${index + 1}</td>
-                                    <td class="py-2 px-3 font-medium">${item.Ticker}</td>
-                                    <td class="py-2 px-3 ${getSemanticColor(item.Upside)} font-semibold">
-                                        ${formatPercentage(item.Upside)}
-                                    </td>
-                                    <td class="py-2 px-3">${formatCurrency(item.Preco_Justo)}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-        }
-
-        function showToast(message, type = 'info') {
-            const toast = document.createElement('div');
-            toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg text-white ${
-                type === 'error' ? 'bg-red-500' : 
-                type === 'success' ? 'bg-green-500' : 'bg-blue-500'
-            }`;
-            toast.textContent = message;
-            document.body.appendChild(toast);
-            
-            setTimeout(() => {
-                toast.classList.add('opacity-0', 'transition-opacity', 'duration-300');
-                setTimeout(() => toast.remove(), 300);
-            }, 3000);
-        }
-
-        // --- FUNÇÕES UTILITÁRIAS ---
-        function destroyChart(id) { 
-            if (charts[id]) { 
-                charts[id].destroy(); 
-                delete charts[id]; 
-            } 
-        }
-    </script>
 </body>
 </html>
