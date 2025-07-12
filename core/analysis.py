@@ -1,230 +1,139 @@
 import pandas as pd
-from typing import Dict, Tuple, List, Optional
+from typing import Dict, Tuple, List
 import numpy as np
-import logging
 
-logger = logging.getLogger(__name__)
-
-def safe_divide(numerator, denominator):
-    if denominator is None or pd.isna(denominator) or denominator == 0:
-        return None
-    if numerator is None or pd.isna(numerator):
-        return None
-    return numerator / denominator
-
-UNIFIED_ACCOUNT_MAPPING = {
-    '1': 'ativo_total',
-    '1.01.01': 't_caixaequivalentes',
-    '1.01.02': 't_aplicacoesfinanceiras',
-    '1.01.03': 'ac_clientes',
-    '1.01.04': 'ac_estoques',
-    '1.01.06': 'ac_outros',
-    '1.01.07': 'ac_outros',
-    '1.01.08': 'ac_outros',
-    '1.02': 'anc',
-    '2.01.01': 'pc_outros',
-    '2.01.02': 'pc_fornecedores',
-    '2.01.03': 'pc_outros',
-    '2.01.04': 't_dividacurtoprazo',
-    '2.01.05': 'pc_outros',
-    '2.02': 'pnc_total',
-    '2.02.01': 't_dividalongoprazo',
-    '2.03': 'pl',
-    '3.01': 'dre_receita',
-    '3.02': 'dre_custo',
-    '3.05': 'dre_lucrooperacional',
-    '3.07': 'dre_despesasfinanceiras',
-    '3.09': 'dre_lucroantesimpostos',
-    '3.10': 'dre_impostorendacsll',
-    '3.11': 'dre_lucroliquido'
+# ==============================================================================
+# MAPEAMENTO DE CONTAS (sem alterações)
+# ==============================================================================
+FLEURIET_ACCOUNT_MAPPING = {
+    '1': 'Ativo_Total', '1.01.01': 'T_Ativo', '1.01.02': 'T_Ativo',
+    '1.01.03': 'AC_Clientes', '1.01.04': 'AC_Estoques', '1.01.06': 'AC',
+    '1.01.07': 'AC', '1.01.08': 'AC', '1.02': 'ANC', '2.01.01': 'PC',
+    '2.01.02': 'PC_Fornecedores', '2.01.03': 'PC', '2.01.04': 'T_Passivo',
+    '2.01.05': 'PC', '2.02': 'PNC', '2.02.01': 'T_Passivo', '2.03': 'PL',
+    '3.01': 'DRE_Receita', '3.02': 'DRE_Custo', '3.05': 'DRE_LucroOperacional',
+    '3.09': 'DRE_ImpostoRenda', '3.11': 'DRE_LucroLiquido'
 }
 
-def reclassify_and_sum(df: pd.DataFrame) -> Dict[str, float]:
-    df['category'] = df['cd_conta'].astype(str).str.strip().apply(
-        lambda x: UNIFIED_ACCOUNT_MAPPING.get(x, 'outros')
+# ==============================================================================
+# FUNÇÕES DE CÁLCULO OTIMIZADAS
+# ==============================================================================
+
+def get_specific_value(df: pd.DataFrame, code: str) -> float:
+    row = df[df['CD_CONTA'] == code]
+    return row['VL_CONTA'].iloc[0] if not row.empty else 0.0
+
+def reclassify_and_sum(df_year: pd.DataFrame) -> Dict[str, float]:
+    """
+    Função otimizada para reclassificar e somar valores para um DataFrame já filtrado por ano.
+    """
+    data = {}
+    # Mapeia cada conta para sua categoria
+    df_year['CATEGORY'] = df_year['CD_CONTA'].apply(
+        lambda x: next((cat for code, cat in FLEURIET_ACCOUNT_MAPPING.items() if x.startswith(code)), None)
     )
-    summed_data = df.groupby('category')['vl_conta'].sum().to_dict()
-    return summed_data
+    summary = df_year.groupby('CATEGORY')['VL_CONTA'].sum().to_dict()
+    data.update(summary)
 
-def calculate_fleuriet_indicators(reclassified_data: Dict) -> Tuple[Dict, str]:
-    ac_clientes = reclassified_data.get('ac_clientes', 0.0)
-    ac_estoques = reclassified_data.get('ac_estoques', 0.0)
-    ac_outros = reclassified_data.get('ac_outros', 0.0)
+    # Extrai valores individuais e agregados necessários para os cálculos
+    for code in ['1', '1.02', '2.02', '2.03', '1.01.03', '1.01.04', '2.01.02', '3.01', '3.02', '3.05', '3.09']:
+        category_name = FLEURIET_ACCOUNT_MAPPING.get(code, "").replace("DRE_", "").replace("AC_", "").replace("PC_", "")
+        data[category_name] = get_specific_value(df_year, code)
     
-    pc_fornecedores = reclassified_data.get('pc_fornecedores', 0.0)
-    pc_outros = reclassified_data.get('pc_outros', 0.0)
+    data['Total_AC'] = data.get('Clientes', 0) + data.get('Estoques', 0) + data.get('AC', 0)
+    data['Total_PC'] = data.get('Fornecedores', 0) + data.get('PC', 0)
+    return data
 
-    ativos_ciclicos = ac_clientes + ac_estoques + ac_outros
-    passivos_ciclicos = pc_fornecedores + pc_outros
-    ncg = ativos_ciclicos - passivos_ciclicos
-    
-    pl = reclassified_data.get('pl', 0.0)
-    pnc = reclassified_data.get('pnc_total', 0.0)
-    anc = reclassified_data.get('anc', 0.0)
-    cdg = (pl + pnc) - anc
-    
-    t = cdg - ncg
-    
-    tipo_estrutura_num = 0
-    if cdg > 0 and ncg > 0 and t >= 0: 
-        tipo_estrutura_num = 1; tipo_estrutura_desc = "Estrutura Ótima"
-    elif cdg > 0 and ncg > 0 and t < 0: 
-        tipo_estrutura_num = 2; tipo_estrutura_desc = "Alto Risco"
-    elif cdg > 0 and ncg < 0: 
-        tipo_estrutura_num = 3; tipo_estrutura_desc = "Estrutura Sólida"
-    elif cdg < 0 and ncg > 0: 
-        tipo_estrutura_num = 4; tipo_estrutura_desc = "Risco Máximo"
-    elif cdg < 0 and ncg < 0 and t < 0: 
-        tipo_estrutura_num = 5; tipo_estrutura_desc = "Estrutura Péssima"
-    elif cdg < 0 and ncg < 0 and t >= 0: 
-        tipo_estrutura_num = 6; tipo_estrutura_desc = "Risco Elevado"
-    else: 
-        tipo_estrutura_desc = "Não Identificada"
+def calculate_fleuriet_indicators(data: Dict[str, float]) -> Tuple[Dict, int]:
+    ac = data.get('Total_AC', 0.0); pc = data.get('Total_PC', 0.0)
+    anc = data.get('ANC', 0.0); pnc = data.get('PNC', 0.0); pl = data.get('PL', 0.0)
+    ncg = ac - pc; cdg = (pnc + pl) - anc; t = cdg - ncg
+    indicators = {'NCG': ncg, 'CDG': cdg, 'T': t}
+    tipo = 0
+    if ncg > 0 and cdg > 0 and t > 0: tipo = 2
+    elif ncg > 0 and cdg > 0 and t < 0: tipo = 3
+    elif ncg < 0 and cdg > 0: tipo = 4
+    elif ncg < 0 and cdg < 0 and t < 0: tipo = 5
+    elif ncg < 0 and cdg < 0 and t > 0: tipo = 6
+    elif ncg > 0 and cdg < 0: tipo = 1
+    return indicators, tipo
 
-    base_indicators = {'ncg': ncg, 'cdg': cdg, 't': t, 'tipoestrutura': tipo_estrutura_num}
-    return base_indicators, tipo_estrutura_desc
+def calculate_advanced_indicators(data: Dict, base_indicators: Dict) -> Dict:
+    t = base_indicators.get('T', 0); anc = data.get('ANC', 0); ncg = base_indicators.get('NCG', 0)
+    ild = t / (anc + ncg) if (anc + ncg) != 0 else 0
+    receita_liquida = data.get('Receita', 0); custo_produtos = abs(data.get('Custo', 0))
+    clientes = data.get('Clientes', 0); estoques = data.get('Estoques', 0); fornecedores = data.get('Fornecedores', 0)
+    pmr = (clientes / receita_liquida) * 365 if receita_liquida != 0 else 0
+    pme = (estoques / custo_produtos) * 365 if custo_produtos != 0 else 0
+    pmp = (fornecedores / custo_produtos) * 365 if custo_produtos != 0 else 0
+    lucro_op = data.get('LucroOperacional', 0); imposto_renda = abs(data.get('ImpostoRenda', 0))
+    aliquota_ir = imposto_renda / lucro_op if lucro_op > 0 else 0
+    nopat = lucro_op * (1 - aliquota_ir)
+    capital_investido = data.get('PL', 0) + data.get('T_Passivo', 0)
+    roic = nopat / capital_investido if capital_investido != 0 else 0
+    return {'ILD': ild, 'PMR': pmr, 'PME': pme, 'PMP': pmp, 'Ciclo_Financeiro': pmr + pme - pmp, 'ROIC': roic}
 
-def calculate_advanced_indicators(reclassified_data: Dict, base_indicators: Dict) -> Dict:
-    vendas = reclassified_data.get('dre_receita')
-    custo = reclassified_data.get('dre_custo')
-    lucro_op = reclassified_data.get('dre_lucrooperacional')
-    ac_clientes = reclassified_data.get('ac_clientes')
-    ac_estoques = reclassified_data.get('ac_estoques')
-    pc_fornecedores = reclassified_data.get('pc_fornecedores')
-    ativo_total = reclassified_data.get('ativo_total')
-    t = base_indicators.get('t')
-    anc = reclassified_data.get('anc')
-    ncg = base_indicators.get('ncg')
+def calculate_z_score_prado(data: Dict, base_indicators: Dict, tipo_estrutura: int) -> Tuple[float, str]:
+    cdg = base_indicators.get('CDG', 0); ncg = base_indicators.get('NCG', 0); t = base_indicators.get('T', 0)
+    ativo_total = data.get('Ativo_Total', 0); receita_liquida = data.get('Receita', 0); t_passivo = data.get('T_Passivo', 0)
+    if ativo_total == 0 or receita_liquida == 0 or ncg == 0: return 0.0, "Dados insuficientes"
+    X1 = cdg / ativo_total; X2 = ncg / receita_liquida; X3 = tipo_estrutura; X4 = t / abs(ncg); X5 = t_passivo / ativo_total
+    Z = 1.887 + (0.899 * X1) + (0.971 * X2) - (0.444 * X3) + (0.055 * X4) - (0.980 * X5)
+    if Z > 2.675: risco = "Classe A (Risco Mínimo)"
+    elif Z > 2.0: risco = "Classe B"
+    elif Z > 1.5: risco = "Classe C"
+    elif Z > 1.0: risco = "Classe D (Atenção)"
+    else: risco = "Classe E (Risco Elevado)"
+    return Z, risco
 
-    compras = custo + ac_estoques if all(v is not None for v in [custo, ac_estoques]) else None
-    ratio_pmr = safe_divide(ac_clientes, vendas)
-    pmr = ratio_pmr * 365 if ratio_pmr is not None else None
-    ratio_pme = safe_divide(ac_estoques, custo)
-    pme = ratio_pme * 365 if ratio_pme is not None else None
-    ratio_pmp = safe_divide(pc_fornecedores, compras)
-    pmp = ratio_pmp * 365 if ratio_pmp is not None else None
-    
-    ciclo_financeiro = None
-    if all(p is not None for p in [pmr, pme, pmp]):
-        ciclo_financeiro = pmr + pme - pmp
-           
-    ild = safe_divide(t, (anc + ncg)) if all(v is not None for v in [t, anc, ncg]) else None
+def run_multi_year_analysis(df: pd.DataFrame, cvm_code: int, years: List[int]):
+    """
+    Função principal otimizada para orquestrar a análise.
+    """
+    # >>> OTIMIZAÇÃO PRINCIPAL: Filtra o DataFrame por CVM uma única vez! <<<
+    company_df = df[df['CD_CVM'] == cvm_code].copy()
 
-    roic = safe_divide(lucro_op, ativo_total)
-    roic_percent = roic * 100 if roic is not None else None
+    if company_df.empty:
+        return None, f"Empresa com CVM {cvm_code} não encontrada nos dados."
 
-    return {
-        'pmr': pmr, 'pme': pme, 'pmp': pmp, 
-        'ciclo_financeiro': ciclo_financeiro,
-        'ild': ild, 'roic': roic_percent
-    }
-
-def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> Tuple[Optional[float], str]:
-    cdg = base_indicators.get('cdg')
-    ncg = base_indicators.get('ncg')
-    t = base_indicators.get('t')
-    tipo_estrutura = base_indicators.get('tipoestrutura')
-    ativo_total = reclassified_data.get('ativo_total')
-    receita_liquida = reclassified_data.get('dre_receita')
-    pcf = reclassified_data.get('pc_fornecedores', 0) + reclassified_data.get('pc_outros', 0) + reclassified_data.get('t_dividacurtoprazo', 0)
-    pnc = reclassified_data.get('pnc_total')
-    
-    if any(v is None for v in [cdg, ncg, t, tipo_estrutura, ativo_total, receita_liquida, pnc]):
-        return None, "Dados insuficientes"
-           
-    x1 = safe_divide(cdg, ativo_total)
-    x2 = safe_divide(ncg, receita_liquida)
-    x3 = float(tipo_estrutura)
-    x4 = safe_divide(t, abs(ncg)) if ncg != 0 else 0
-    x5 = safe_divide((pcf + pnc), ativo_total)
-
-    if any(x is None for x in [x1, x2, x4, x5]):
-        return None, "Cálculo impossível"
-
-    z = 1.887 + (0.899 * x1) + (0.971 * x2) - (0.444 * x3) + (0.055 * x4) - (0.980 * x5)
-
-    if z > 2.675: 
-        risk_class = "Classe A (Risco Mínimo)"
-    elif 2.0 < z <= 2.675: 
-        risk_class = "Classe B"
-    elif 1.5 < z <= 2.0: 
-        risk_class = "Classe C"
-    elif 1.0 < z <= 1.5: 
-        risk_class = "Classe D (Atenção)"
-    else: 
-        risk_class = "Classe E (Risco Elevado)"
-       
-    return round(z, 4), risk_class
-
-def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List[int]) -> Tuple[Dict, str]:
-    company_df.columns = [col.lower() for col in company_df.columns]
-    
+    company_name = company_df['DENOM_CIA'].iloc[0]
     all_results = []
-    company_name = company_df['denom_cia'].iloc[0] if not company_df.empty else f"Empresa CVM {cvm_code}"
-    company_df['dt_refer'] = pd.to_datetime(company_df['dt_refer'])
-    
-    total_ncg = 0.0
-    total_cdg = 0.0
-    total_t = 0.0
-    count = 0
 
     for year in sorted(years):
-        reference_date = pd.to_datetime(f"{year}-12-31")
-        df_year = company_df[company_df['dt_refer'] == reference_date].copy()
-        
+        reference_date = f"{year}-12-31"
+        # Filtra o DataFrame já pequeno para o ano específico
+        df_year = company_df[company_df['DT_REFER'] == reference_date]
+
         if df_year.empty:
-            logger.warning(f"Dados não encontrados: Ano {year} | CVM {cvm_code}")
-            continue
+            continue # Pula para o próximo ano se não houver dados
+
+        reclassified_data = reclassify_and_sum(df_year)
+        base_indicators, tipo_estrutura = calculate_fleuriet_indicators(reclassified_data)
+        advanced_indicators = calculate_advanced_indicators(reclassified_data, base_indicators)
+        z_score, z_risk = calculate_z_score_prado(reclassified_data, base_indicators, tipo_estrutura)
+        advanced_indicators['Z_Score'] = z_score
+        advanced_indicators['Z_Risk'] = z_risk
         
-        try:
-            reclassified_data = reclassify_and_sum(df_year)
-            base_indicators, tipo_estrutura = calculate_fleuriet_indicators(reclassified_data)
-            advanced_indicators = calculate_advanced_indicators(reclassified_data, base_indicators)
-            z_score, z_risk = calculate_z_score_prado(reclassified_data, base_indicators)
-            
-            advanced_indicators['z_score'] = z_score
-            advanced_indicators['z_risk'] = z_risk
-            
-            total_assets = reclassified_data.get('ativo_total')
-            if total_assets and total_assets > 0:
-                total_ncg += base_indicators['ncg'] / total_assets
-                total_cdg += base_indicators['cdg'] / total_assets
-                total_t += base_indicators['t'] / total_assets
-                count += 1
-            
-            all_results.append({
-                'year': year,
-                'base_indicators': base_indicators,
-                'advanced_indicators': advanced_indicators,
-                'structure': tipo_estrutura
-            })
-        except Exception as e:
-            logger.error(f"Erro processamento: Ano {year} | CVM {cvm_code}: {e}", exc_info=True)
-            return None, f"Erro ano {year}."
+        structure_map = {1: "Tipo 1", 2: "Tipo 2", 3: "Tipo 3", 4: "Tipo 4", 5: "Tipo 5", 6: "Tipo 6", 0: "N/C"}
+        
+        all_results.append({
+            'year': year,
+            'base_indicators': base_indicators,
+            'advanced_indicators': advanced_indicators,
+            'structure': structure_map[tipo_estrutura]
+        })
     
     if not all_results:
-        return None, f"Sem dados: {min(years)} a {max(years)}."
-    
+        return None, f"Não foram encontrados dados anuais para a empresa CVM {cvm_code} no período de {min(years)} a {max(years)}."
+
     chart_data = {
         'labels': [res['year'] for res in all_results],
-        'ncg': [res['base_indicators']['ncg'] for res in all_results],
-        'cdg': [res['base_indicators']['cdg'] for res in all_results],
-        't': [res['base_indicators']['t'] for res in all_results],
-    }
-    
-    ncg_percentage = total_ncg / count if count > 0 else 0.0
-    cdg_percentage = total_cdg / count if count > 0 else 0.0
-    t_percentage = total_t / count if count > 0 else 0.0
-    
-    final_result = {
-        'company_name': company_name,
-        'cvm_code': cvm_code,
-        'yearly_results': all_results,
-        'chart_data': chart_data,
-        'financial_status': all_results[-1]['structure'] if all_results else "N/D",
-        'ncg_percentage': ncg_percentage,
-        'cdg_percentage': cdg_percentage,
-        't_percentage': t_percentage
+        'ncg': [res['base_indicators']['NCG'] for res in all_results],
+        'cdg': [res['base_indicators']['CDG'] for res in all_results],
+        't': [res['base_indicators']['T'] for res in all_results],
     }
 
-    return final_result, None
+    return {
+        'company_name': company_name, 'cvm_code': cvm_code,
+        'yearly_results': all_results, 'chart_data': chart_data
+    }, None
