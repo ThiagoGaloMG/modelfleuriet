@@ -10,381 +10,199 @@ from scipy import stats
 from functools import lru_cache
 from datetime import datetime
 from typing import Dict, List, Any
-import gc
-import psutil
-import os
-import time
-import random
 
 # --- Configuração Básica ---
 warnings.filterwarnings("ignore")
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
 logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 
 # --- Configurações Centralizadas para a Análise de Valuation ---
 VALUATION_CONFIG = {
-    "periodo_beta_ibov": "5y",
-    "contas_cvm": {
-        "ebit": "3.05", 
-        "imposto_de_renda_csll": "3.10", 
-        "lucro_antes_impostos": "3.09",
-        "ativo_nao_circulante": "1.02", 
-        "caixa_equivalentes": "1.01.01",
-        "divida_curto_prazo": "2.01.04", 
-        "divida_longo_prazo": "2.02.01",
-        "contas_a_receber": "1.01.03", 
-        "estoques": "1.01.04", 
-        "fornecedores": "2.01.02",
-        "despesas_financeiras": "3.07" 
+    "PERIODO_BETA_IBOV": "5y",
+    "CONTAS_CVM": {
+        "EBIT": "3.05", "IMPOSTO_DE_RENDA_CSLL": "3.10", "LUCRO_ANTES_IMPOSTOS": "3.09",
+        "ATIVO_NAO_CIRCULANTE": "1.02", "CAIXA_EQUIVALENTES": "1.01.01",
+        "DIVIDA_CURTO_PRAZO": "2.01.04", "DIVIDA_LONGO_PRAZO": "2.02.01",
+        "CONTAS_A_RECEBER": "1.01.03", "ESTOQUES": "1.01.04", "FORNECEDORES": "2.01.02",
+        "DESPESAS_FINANCEIRAS": "3.07" 
     },
-    "empresas_excluidas": ['itub4', 'bbdc4', 'bbas3', 'sanb11', 'b3sa3'],
-    "max_retries": 3,
-    "timeout": 15,
-    "request_delay": 1.5,
-    "max_delay": 60,
-    "min_delay": 0.5
+    "EMPRESAS_EXCLUIDAS": ['ITUB4', 'BBDC4', 'BBAS3', 'SANB11', 'B3SA3']
 }
 
 # --- Funções de Lógica de Negócio e Cálculos ---
 
 @lru_cache(maxsize=1)
 def obter_dados_mercado() -> Dict[str, Any]:
-    dados = {
-        "risk_free_rate": 0.105, 
-        "premio_risco_mercado": 0.08, 
-        "cresc_perpetuo": 0.03,
-        "ibov_data": pd.DataFrame()
-    }
+    """Obtém premissas de mercado (taxa livre de risco, prêmio) e dados do IBOV para cálculo do Beta."""
+    dados = {"risk_free_rate": 0.105, "premio_risco_mercado": 0.08, "cresc_perpetuo": 0.03}
     
-    # Obter taxa livre de risco (SELIC)
-    for attempt in range(VALUATION_CONFIG["max_retries"]):
-        try:
-            selic_url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json"
-            response = requests.get(selic_url, timeout=VALUATION_CONFIG["timeout"])
-            response.raise_for_status()
-            dados["risk_free_rate"] = float(response.json()[0]["valor"]) / 100.0
-            break
-        except Exception as e:
-            if attempt == VALUATION_CONFIG["max_retries"] - 1:
-                logger.warning(f"Não foi possível obter a SELIC. Erro: {e}")
-            continue
+    try:
+        selic_url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json"
+        response = requests.get(selic_url, timeout=10)
+        response.raise_for_status()
+        dados["risk_free_rate"] = float(response.json()[0]["valor"]) / 100.0
+    except Exception as e:
+        logger.warning(f"Não foi possível obter a SELIC do BCB. Usando valor padrão. Erro: {e}")
 
-    # Obter dados do IBOV
-    for attempt in range(VALUATION_CONFIG["max_retries"]):
-        try:
-            ibov_data = yf.download(
-                "^BVSP", 
-                period=VALUATION_CONFIG["periodo_beta_ibov"], 
-                progress=False, 
-                timeout=VALUATION_CONFIG["timeout"]
-            )
-            if not ibov_data.empty:
-                dados["ibov_data"] = ibov_data
-                break
-        except Exception as e:
-            if attempt == VALUATION_CONFIG["max_retries"] - 1:
-                logger.error(f"Falha ao baixar dados do IBOV. Erro: {e}")
-    
+    try:
+        dados["ibov_data"] = yf.download("^BVSP", period=VALUATION_CONFIG["PERIODO_BETA_IBOV"], progress=False, timeout=15)
+        if dados["ibov_data"].empty:
+            raise ValueError("Download do IBOV retornou um DataFrame vazio.")
+    except Exception as e:
+        logger.error(f"Falha ao baixar dados do IBOV. O cálculo do Beta usará o valor padrão 1.0. Erro: {e}")
+        dados["ibov_data"] = pd.DataFrame() 
     return dados
 
 def obter_valor_recente(df_empresa: pd.DataFrame, codigo_conta: str) -> float:
-    try:
-        historico = obter_historico_metrica(df_empresa, codigo_conta)
-        return historico.iloc[-1] if not historico.empty else 0.0
-    except Exception as e:
-        logger.warning(f"Erro ao obter valor recente: {e}")
-        return 0.0
+    """Obtém o valor mais recente de uma conta específica de um DataFrame de empresa."""
+    historico = obter_historico_metrica(df_empresa, codigo_conta)
+    return historico.iloc[-1] if not historico.empty else 0.0
 
 def obter_historico_metrica(df_empresa: pd.DataFrame, codigo_conta: str) -> pd.Series:
-    try:
-        metric_df = df_empresa[
-            (df_empresa["cd_conta"] == codigo_conta) & 
-            (df_empresa["st_conta"] == "VALOR")
-        ].copy()
-        
-        if metric_df.empty:
-            return pd.Series(dtype=float)
-            
-        metric_df["dt_refer"] = pd.to_datetime(metric_df["dt_refer"])
-        metric_df = metric_df.sort_values("dt_refer")
-        return metric_df.set_index("dt_refer")["vl_conta"]
-    except Exception as e:
-        logger.warning(f"Erro ao obter histórico: {e}")
+    """Extrai uma série temporal de uma métrica específica."""
+    metric_df = df_empresa[(df_empresa["CD_CONTA"] == codigo_conta) & (df_empresa["ORDEM_EXERC"] == "ÚLTIMO")]
+    if metric_df.empty:
         return pd.Series(dtype=float)
+    metric_df = metric_df.copy()
+    metric_df["DT_REFER"] = pd.to_datetime(metric_df["DT_REFER"])
+    return metric_df.set_index("DT_REFER")["VL_CONTA"].sort_index()
 
 def calcular_beta(ticker: str, ibov_data: pd.DataFrame) -> float:
-    if ibov_data.empty: 
-        return 1.0
-    
+    """Calcula o beta ajustado de uma ação em relação ao IBOV."""
+    if ibov_data.empty: return 1.0
     try:
-        for attempt in range(VALUATION_CONFIG["max_retries"]):
-            try:
-                dados_acao = yf.download(
-                    ticker, 
-                    period=VALUATION_CONFIG["periodo_beta_ibov"], 
-                    progress=False, 
-                    timeout=VALUATION_CONFIG["timeout"]
-                )
-                
-                if dados_acao.empty or len(dados_acao) < 60: 
-                    return 1.0
-                
-                dados_combinados = pd.concat(
-                    [dados_acao["Adj Close"], ibov_data["Adj Close"]], 
-                    axis=1
-                ).dropna()
-                dados_combinados.columns = ['acao', 'ibov']
-                
-                retornos = dados_combinados.pct_change().dropna()
-                if len(retornos) < 50: 
-                    return 1.0
-                
-                slope, _, _, _, _ = stats.linregress(retornos['ibov'], retornos['acao'])
-                beta_ajustado = 0.67 * slope + 0.33 * 1.0
-                return max(0.1, min(beta_ajustado, 2.5))
-            
-            except Exception as e:
-                if "429" in str(e):
-                    wait_time = min(
-                        VALUATION_CONFIG["max_delay"],
-                        VALUATION_CONFIG["min_delay"] * (2 ** attempt) + random.uniform(0, 1)
-                    )
-                    logger.warning(f"Rate limit atingido. Aguardando {wait_time:.1f}s")
-                    time.sleep(wait_time)
-                else:
-                    logger.warning(f"Erro ao calcular beta: {e}")
-                    if attempt == VALUATION_CONFIG["max_retries"] - 1:
-                        return 1.0
-    except Exception as e:
-        logger.warning(f"Erro geral ao calcular beta: {e}")
+        dados_acao = yf.download(ticker, period=VALUATION_CONFIG["PERIODO_BETA_IBOV"], progress=False, timeout=15)
+        if dados_acao.empty or len(dados_acao) < 60: return 1.0
+        
+        dados_combinados = pd.concat([dados_acao["Adj Close"], ibov_data["Adj Close"]], axis=1).dropna()
+        retornos = dados_combinados.pct_change().dropna()
+        if len(retornos) < 50: return 1.0
+        
+        retornos.columns = ['Acao', 'Ibov']
+        slope, _, _, _, _ = stats.linregress(retornos['Ibov'], retornos['Acao'])
+        beta_ajustado = 0.67 * slope + 0.33 * 1.0
+        return beta_ajustado if not np.isnan(beta_ajustado) else 1.0
+    except Exception:
         return 1.0
 
-def obter_info_yfinance(ticker_sa: str) -> Dict[str, Any]:
-    info = {}
-    
-    for attempt in range(VALUATION_CONFIG["max_retries"]):
-        try:
-            ticker = yf.Ticker(ticker_sa)
-            info = ticker.info
-            if not info:
-                hist = ticker.history(period="1d")
-                if not hist.empty:
-                    info = {
-                        "marketcap": hist["Close"].iloc[-1] * ticker.info.get("sharesoutstanding", 0),
-                        "currentprice": hist["Close"].iloc[-1],
-                        "previousclose": hist["Close"].iloc[-1],
-                        "sharesoutstanding": ticker.info.get("sharesoutstanding", 0)
-                    }
-            if info:
-                break
-                
-        except Exception as e:
-            if "429" in str(e):
-                wait_time = min(
-                    VALUATION_CONFIG["max_delay"],
-                    VALUATION_CONFIG["min_delay"] * (2 ** attempt) + random.uniform(0, 1)
-                )
-                logger.warning(f"Rate limit atingido. Aguardando {wait_time:.1f}s")
-                time.sleep(wait_time)
-            else:
-                logger.warning(f"Erro ao obter info: {e}")
-                if attempt == VALUATION_CONFIG["max_retries"] - 1:
-                    return {}
-    
-    return info
-
-def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market_data: Dict[str, Any]) -> Dict[str, Any]:
+def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market_data: Dict[str, Any]) -> Dict[str, Any] | None:
+    """
+    Executa todos os cálculos de valuation para uma única empresa.
+    Recebe o DataFrame já filtrado para a empresa.
+    """
     try:
-        if df_empresa.empty:
+        if df_empresa.empty: return None
+
+        info = yf.Ticker(ticker_sa).info
+        market_cap = info.get("marketCap")
+        preco_atual = info.get("currentPrice", info.get("previousClose"))
+        n_acoes = info.get("sharesOutstanding")
+
+        if not all([market_cap, preco_atual, n_acoes, n_acoes > 0, market_cap > 0]):
             return None
 
-        C = VALUATION_CONFIG["contas_cvm"]
-        ticker = ticker_sa.replace('.sa', '')
-        
-        # Obter informações de mercado
-        info = obter_info_yfinance(ticker_sa)
-        if not info:
-            return None
-            
-        market_cap = info.get("marketcap")
-        preco_atual = info.get("currentprice", info.get("previousclose"))
-        n_acoes = info.get("sharesoutstanding")
+        C = VALUATION_CONFIG["CONTAS_CVM"]
+        hist_ebit = obter_historico_metrica(df_empresa, C["EBIT"])
+        if hist_ebit.empty or hist_ebit.iloc[-1] == 0: return None
 
-        if not all([market_cap, preco_atual, n_acoes]) or n_acoes <= 0 or market_cap <= 0:
-            return None
-
-        # Cálculo do NOPAT
-        hist_ebit = obter_historico_metrica(df_empresa, C["ebit"])
-        if hist_ebit.empty or hist_ebit.iloc[-1] == 0:
-            return None
-
-        # Cálculo da alíquota efetiva de impostos
-        hist_imposto = obter_historico_metrica(df_empresa, C["imposto_de_renda_csll"])
-        hist_lucro_antes_ir = obter_historico_metrica(df_empresa, C["lucro_antes_impostos"])
-        
-        df_tributos = pd.DataFrame({
-            'imposto': hist_imposto,
-            'lucro_antes_ir': hist_lucro_antes_ir
-        }).dropna()
-        
-        df_tributos = df_tributos[df_tributos['lucro_antes_ir'] > 0]
-        df_tributos['aliquota'] = df_tributos['imposto'].abs() / df_tributos['lucro_antes_ir']
-        
-        if len(df_tributos) >= 1:
-            aliquota_efetiva = df_tributos['aliquota'].iloc[-1]
-        else:
-            aliquota_efetiva = 0.34
-        
-        aliquota_efetiva = max(0.15, min(aliquota_efetiva, 0.45))
+        imposto_total = obter_historico_metrica(df_empresa, C["IMPOSTO_DE_RENDA_CSLL"]).sum()
+        lucro_antes_ir = obter_historico_metrica(df_empresa, C["LUCRO_ANTES_IMPOSTOS"]).sum()
+        aliquota_efetiva = abs(imposto_total / lucro_antes_ir) if lucro_antes_ir != 0 else 0.34
+        aliquota_efetiva = max(0, min(aliquota_efetiva, 0.45))
 
         nopat_recente = hist_ebit.iloc[-1] * (1 - aliquota_efetiva)
 
-        # Cálculo do Capital Empregado (Método corrigido)
-        ativo_total = obter_valor_recente(df_empresa, "1")
-        caixa = obter_valor_recente(df_empresa, C["caixa_equivalentes"])
-        passivo_circulante_total = obter_valor_recente(df_empresa, "2.01")
-        divida_curto = obter_valor_recente(df_empresa, C["divida_curto_prazo"])
-        passivo_operacional = passivo_circulante_total - divida_curto
+        ncg = (obter_valor_recente(df_empresa, C["CONTAS_A_RECEBER"]) + 
+               obter_valor_recente(df_empresa, C["ESTOQUES"]) - 
+               obter_valor_recente(df_empresa, C["FORNECEDORES"]))
         
-        capital_empregado = ativo_total - caixa - passivo_operacional
+        ativo_nao_circulante = obter_valor_recente(df_empresa, C["ATIVO_NAO_CIRCULANTE"])
+        capital_empregado = ncg + ativo_nao_circulante
 
-        if capital_empregado <= 0:
-            return None
+        if capital_empregado <= 0: return None
 
-        # Cálculo do ROIC
         roic = nopat_recente / capital_empregado
-
-        # Cálculo do WACC
         beta = calcular_beta(ticker_sa, market_data["ibov_data"])
         ke = market_data["risk_free_rate"] + beta * market_data["premio_risco_mercado"]
 
-        divida_total = (
-            obter_valor_recente(df_empresa, C["divida_curto_prazo"]) + 
-            obter_valor_recente(df_empresa, C["divida_longo_prazo"])
-        )
-        despesa_financeira = abs(obter_valor_recente(df_empresa, C["despesas_financeiras"]))
+        divida_total = (obter_valor_recente(df_empresa, C["DIVIDA_CURTO_PRAZO"]) + 
+                        obter_valor_recente(df_empresa, C["DIVIDA_LONGO_PRAZO"]))
+        despesa_financeira = abs(obter_valor_recente(df_empresa, C["DESPESAS_FINANCEIRAS"]))
         
         kd = min(despesa_financeira / divida_total, 0.35) if divida_total > 0 and despesa_financeira > 0 else ke * 0.7
 
         valor_total = market_cap + divida_total
-        if valor_total <= 0:
-            return None
+        if valor_total <= 0: return None
             
         w_e = market_cap / valor_total
         w_d = divida_total / valor_total
         wacc = (w_e * ke) + (w_d * kd * (1 - aliquota_efetiva))
 
-        if wacc <= 0.01 or wacc >= 0.40:
-            return None
-
-        # Cálculo do Valuation
         g = market_data["cresc_perpetuo"]
-        if wacc <= g:
-            return None
+        if wacc <= g: return None
 
         eva = (roic - wacc) * capital_empregado
         valor_firma = capital_empregado + (eva * (1 + g)) / (wacc - g)
         
-        divida_liquida = divida_total - obter_valor_recente(df_empresa, C["caixa_equivalentes"])
+        divida_liquida = divida_total - obter_valor_recente(df_empresa, C["CAIXA_EQUIVALENTES"])
         equity_value = valor_firma - divida_liquida
         preco_justo = equity_value / n_acoes
         
         upside = (preco_justo / preco_atual) - 1 if preco_atual > 0 else 0
 
-        if not (-0.99 < upside < 10.0):
-            return None
-
         return {
-            'nome': info.get('shortname', ticker)[:30], 
-            'ticker': ticker,
-            'upside': upside, 
-            'roic': roic, 
-            'wacc': wacc, 
-            'spread': roic - wacc,
-            'preco_atual': preco_atual, 
-            'preco_justo': preco_justo,
-            'market_cap': market_cap, 
-            'eva': eva,
-            'capital_empregado': capital_empregado, 
-            'nopat': nopat_recente,
-            'beta': beta,
-            'data_calculo': datetime.now().strftime('%Y-%m-%d')
+            'Nome': info.get('shortName', ticker_sa.replace('.SA', ''))[:30], 
+            'Ticker': ticker_sa.replace('.SA', ''),
+            'Upside': upside, 'ROIC': roic, 'WACC': wacc, 'Spread': roic - wacc,
+            'Preco_Atual': preco_atual, 'Preco_Justo': preco_justo,
+            'Market_Cap': market_cap, 'EVA': eva,
+            'Capital_Empregado': capital_empregado, 'NOPAT': nopat_recente
         }
     except Exception as e:
-        logger.error(f"Erro ao processar valuation: {e}", exc_info=True)
+        logger.error(f"Erro ao processar valuation para {ticker_sa}: {e}", exc_info=True)
         return None
 
 def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataFrame) -> List[Dict[str, Any]]:
-    logger.info(">>>>>> INICIANDO ANÁLISE DE VALUATION <<<<<<")
-    process = psutil.Process()
-    logger.info(f"Memória inicial: {process.memory_info().rss / (1024 * 1024):.2f} MB")
-    
-    df_full_data.columns = [col.lower() for col in df_full_data.columns]
-    ticker_map.columns = [col.lower() for col in ticker_map.columns]
-    
-    df_full_data['cd_cvm'] = pd.to_numeric(df_full_data['cd_cvm'], errors='coerce').astype('Int64')
-    ticker_map['cd_cvm'] = pd.to_numeric(ticker_map['cd_cvm'], errors='coerce').astype('Int64')
-    
-    logger.info(f"Dados financeiros: {len(df_full_data)} registros")
-    logger.info(f"Tickers mapeados: {len(ticker_map)} empresas")
+    """
+    Função principal que orquestra a análise de valuation para todas as empresas.
+    """
+    logger.info(">>>>>> INICIANDO ANÁLISE DE VALUATION PARA TODAS AS EMPRESAS <<<<<<")
     
     market_data = obter_dados_mercado()
+    
     resultados_brutos = []
     
-    for idx, row in enumerate(ticker_map.itertuples()):
-        ticker = row.ticker
-        codigo_cvm = row.cd_cvm
-        nome_empresa = row.nome_empresa
+    # Itera sobre o mapa de tickers, que já contém CD_CVM e Ticker
+    for _, row in ticker_map.drop_duplicates(subset=['TICKER']).iterrows():
+        ticker = row['TICKER']
+        codigo_cvm = row['CD_CVM']
         
-        if ticker in VALUATION_CONFIG["empresas_excluidas"]:
-            logger.info(f"Pulando empresa excluída: {ticker}")
+        if ticker in VALUATION_CONFIG["EMPRESAS_EXCLUIDAS"]:
             continue
         
-        df_empresa_atual = df_full_data[df_full_data['cd_cvm'] == codigo_cvm].copy()
+        # Filtra o DataFrame completo para a empresa atual
+        df_empresa_atual = df_full_data[df_full_data["CD_CVM"] == codigo_cvm].copy()
         
         if df_empresa_atual.empty:
-            logger.warning(f"Dados não encontrados: {ticker} (CVM: {codigo_cvm})")
             continue
 
-        try:
-            logger.info(f"Processando: {ticker} ({nome_empresa})")
-            resultado = processar_valuation_empresa(
-                f"{ticker.upper()}.sa", 
-                df_empresa_atual, 
-                market_data
-            )
-            
-            if resultado:
-                resultado['cd_cvm'] = int(codigo_cvm)
-                resultados_brutos.append(resultado)
-                logger.info(f"Valuation calculado: {ticker} | Upside {resultado.get('upside', 0):.2%}")
-            else:
-                logger.warning(f"Falha no cálculo: {ticker}")
-                
-        except Exception as e:
-            logger.error(f"Erro ao processar {ticker}: {str(e)}", exc_info=True)
-        
-        if len(resultados_brutos) % 5 == 0:
-            gc.collect()
-            logger.info(f"Memória intermediária: {process.memory_info().rss / (1024 * 1024):.2f} MB")
-            
-        if idx < len(ticker_map) - 1:
-            delay = VALUATION_CONFIG["request_delay"] + random.uniform(-0.2, 0.2)
-            time.sleep(delay)
-
-    resultados_filtrados = [
-        r for r in resultados_brutos 
-        if r and 0.01 < r.get('wacc', 1) < 0.40 and -0.99 < r.get('upside', 0) < 10.0
-    ]
+        resultado = processar_valuation_empresa(f"{ticker.upper()}.SA", df_empresa_atual, market_data)
+        if resultado:
+            resultados_brutos.append(resultado)
+    
+    # Aplica o filtro de sanidade
+    resultados_filtrados = []
+    for r in resultados_brutos:
+        if r is None: continue
+        wacc_ok = 0.01 < r.get('WACC', 1) < 0.40
+        upside_ok = -0.99 < r.get('Upside', 0) < 10.0
+        if wacc_ok and upside_ok:
+            resultados_filtrados.append(r)
+        else:
+            logger.warning(f"Filtrando empresa {r['Ticker']} por resultados extremos: WACC={r.get('WACC', 'N/A'):.2%}, Upside={r.get('Upside', 'N/A'):.2%}")
 
     total_calculado = len(resultados_brutos)
     total_filtrado = len(resultados_filtrados)
-    logger.info(f">>>>>> CONCLUSÃO: {total_filtrado}/{total_calculado} empresas <<<<<<")
-    logger.info(f"Memória final: {process.memory_info().rss / (1024 * 1024):.2f} MB")
+    logger.info(f">>>>>> ANÁLISE DE VALUATION CONCLUÍDA: {total_filtrado} de {total_calculado} empresas passaram no filtro. <<<<<<")
     
     return resultados_filtrados
