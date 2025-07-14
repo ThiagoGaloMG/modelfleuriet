@@ -31,10 +31,17 @@ def create_db_engine():
     if not database_url:
         logger.error("DATABASE_URL não definida.")
         raise ValueError("DATABASE_URL não definida.")
-    conn_str = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    
+    # Garante que o dialeto psycopg2 seja usado
+    if database_url.startswith("postgresql://"):
+        conn_str = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    else:
+        conn_str = database_url
+
     try:
         engine = create_engine(conn_str, pool_pre_ping=True)
-        with engine.connect(): logger.info("Conexão com o banco de dados estabelecida.")
+        with engine.connect():
+            logger.info("Conexão com o banco de dados estabelecida com sucesso.")
         return engine
     except Exception as e:
         logger.error(f"Falha ao criar a engine do banco de dados: {e}", exc_info=True)
@@ -54,17 +61,44 @@ def load_ticker_mapping(file_path='data/mapeamento_tickers.csv'):
         return pd.DataFrame()
 
 def get_companies_list(engine, ticker_mapping_df):
-    if engine is None: return []
-    logger.info("Buscando lista de empresas do banco...")
+    """
+    Busca a lista de empresas do banco de dados de forma otimizada para não estourar a memória.
+    """
+    if engine is None:
+        logger.error("Engine do banco de dados não está disponível para get_companies_list.")
+        return []
+    
+    logger.info("Buscando lista de empresas do banco (versão otimizada)...")
     try:
-        with engine.connect() as connection:
-            query = text('SELECT DISTINCT "DENOM_CIA", "CD_CVM" FROM financial_data ORDER BY "DENOM_CIA";')
-            df_companies_db = pd.read_sql(query, connection)
-        df_companies_db.rename(columns={'DENOM_CIA': 'NOME_EMPRESA'}, inplace=True)
+        # CORREÇÃO 1: Nomes das colunas em minúsculo ("DENOM_CIA" -> "denom_cia") para corresponder ao schema do PostgreSQL.
+        query = text('SELECT DISTINCT "denom_cia", "cd_cvm" FROM financial_data ORDER BY "denom_cia";')
+
+        # CORREÇÃO 2: Otimização de memória usando streaming e lotes (chunks) para evitar o erro 'OutOfMemory'.
+        connection = engine.connect().execution_options(stream_results=True)
+        
+        all_chunks = []
+        # O 'chunksize' divide a leitura do banco de dados em pedaços para não carregar tudo na RAM de uma vez.
+        for chunk_df in pd.read_sql(query, connection, chunksize=5000):
+            all_chunks.append(chunk_df)
+        
+        connection.close()
+
+        if not all_chunks:
+            logger.warning("Nenhuma empresa encontrada no banco de dados.")
+            return []
+
+        df_companies_db = pd.concat(all_chunks, ignore_index=True)
+
+        # Renomeia as colunas para um padrão consistente para o merge e a exibição.
+        df_companies_db.rename(columns={'denom_cia': 'NOME_EMPRESA', 'cd_cvm': 'CD_CVM'}, inplace=True)
+        
+        # Junta os dados do banco com o mapeamento de tickers.
         final_df = pd.merge(df_companies_db, ticker_mapping_df, on='CD_CVM', how='left')
         final_df['TICKER'].fillna('S/TICKER', inplace=True)
-        logger.info(f"{len(final_df)} empresas encontradas e mapeadas.")
+        
+        logger.info(f"{len(final_df)} empresas encontradas e mapeadas com sucesso.")
         return final_df.to_dict(orient='records')
+        
     except Exception as e:
         logger.error(f"Erro ao buscar lista de empresas: {e}", exc_info=True)
         return []
@@ -93,8 +127,8 @@ def ensure_valuation_table_exists(engine):
         """)
         
         with engine.connect() as connection:
-            connection.execute(create_query)
-            connection.commit()
+            with connection.begin(): # Usar transação
+                connection.execute(create_query)
         
         logger.info("Tabela 'valuation_results' criada com sucesso.")
         return True
@@ -143,14 +177,15 @@ def run_valuation_worker_if_needed(engine):
     except Exception as e:
         logger.error(f"Erro ao executar worker de valuation: {e}", exc_info=True)
 
-# Inicialização
+# --- Inicialização da Aplicação ---
 db_engine = create_db_engine()
 df_tickers = load_ticker_mapping()
 companies_list = get_companies_list(db_engine, df_tickers)
 
-# Garante que a tabela de valuation existe
-if ensure_valuation_table_exists(db_engine):
-    run_valuation_worker_if_needed(db_engine)
+# Garante que a tabela de valuation existe e executa o worker se necessário
+if db_engine:
+    if ensure_valuation_table_exists(db_engine):
+        run_valuation_worker_if_needed(db_engine)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -164,7 +199,7 @@ def index():
         years_to_analyze = list(range(start_year, end_year + 1))
 
         with db_engine.connect() as connection:
-            query = text('SELECT * FROM financial_data WHERE "CD_CVM" = :cvm_code')
+            query = text('SELECT * FROM financial_data WHERE "cd_cvm" = :cvm_code') # Corrigido para minúsculo
             df_company = pd.read_sql(query, connection, params={'cvm_code': cvm_code})
 
         if df_company.empty:
@@ -192,7 +227,6 @@ def index():
 def get_valuation_data():
     logger.info("Buscando dados de valuation pré-calculados...")
     try:
-        # Verifica se a tabela existe
         inspector = inspect(db_engine)
         if not inspector.has_table('valuation_results'):
             return jsonify({"error": "A análise de valuation ainda não foi executada. Por favor, aguarde alguns minutos e tente novamente."}), 404
@@ -226,5 +260,5 @@ def page_not_found(e): return render_template('404.html'), 404
 def internal_server_error(e): return render_template('500.html'), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
-
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
