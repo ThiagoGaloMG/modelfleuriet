@@ -29,13 +29,9 @@ VALUATION_CONFIG = {
     "EMPRESAS_EXCLUIDAS": ['ITUB4', 'BBDC4', 'BBAS3', 'SANB11', 'B3SA3']
 }
 
-# --- Funções de Lógica de Negócio e Cálculos (NÃO MODIFICADAS) ---
-
 @lru_cache(maxsize=1)
 def obter_dados_mercado() -> Dict[str, Any]:
-    """Obtém premissas de mercado (taxa livre de risco, prêmio) e dados do IBOV para cálculo do Beta."""
     dados = {"risk_free_rate": 0.105, "premio_risco_mercado": 0.08, "cresc_perpetuo": 0.03}
-    
     try:
         selic_url = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json"
         response = requests.get(selic_url, timeout=10)
@@ -54,21 +50,19 @@ def obter_dados_mercado() -> Dict[str, Any]:
     return dados
 
 def obter_valor_recente(df_empresa: pd.DataFrame, codigo_conta: str) -> float:
-    """Obtém o valor mais recente de uma conta específica de um DataFrame de empresa."""
     historico = obter_historico_metrica(df_empresa, codigo_conta)
     return historico.iloc[-1] if not historico.empty else 0.0
 
 def obter_historico_metrica(df_empresa: pd.DataFrame, codigo_conta: str) -> pd.Series:
-    """Extrai uma série temporal de uma métrica específica."""
-    metric_df = df_empresa[(df_empresa["CD_CONTA"] == codigo_conta) & (df_empresa["ORDEM_EXERC"] == "ÚLTIMO")]
+    # ## CORREÇÃO ##: Nomes das colunas em minúsculo para corresponder ao banco de dados.
+    metric_df = df_empresa[(df_empresa["cd_conta"] == codigo_conta) & (df_empresa["ordem_exerc"] == "ÚLTIMO")]
     if metric_df.empty:
         return pd.Series(dtype=float)
     metric_df = metric_df.copy()
-    metric_df["DT_REFER"] = pd.to_datetime(metric_df["DT_REFER"])
-    return metric_df.set_index("DT_REFER")["VL_CONTA"].sort_index()
+    metric_df["dt_refer"] = pd.to_datetime(metric_df["dt_refer"])
+    return metric_df.set_index("dt_refer")["vl_conta"].sort_index()
 
 def calcular_beta(ticker: str, ibov_data: pd.DataFrame) -> float:
-    """Calcula o beta ajustado de uma ação em relação ao IBOV."""
     if ibov_data.empty: return 1.0
     try:
         dados_acao = yf.download(ticker, period=VALUATION_CONFIG["PERIODO_BETA_IBOV"], progress=False, timeout=15)
@@ -86,10 +80,6 @@ def calcular_beta(ticker: str, ibov_data: pd.DataFrame) -> float:
         return 1.0
 
 def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market_data: Dict[str, Any]) -> Dict[str, Any] | None:
-    """
-    Executa todos os cálculos de valuation para uma única empresa.
-    Recebe o DataFrame já filtrado para a empresa.
-    """
     try:
         if df_empresa.empty: return None
 
@@ -159,55 +149,36 @@ def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market
             'Capital_Empregado': capital_empregado, 'NOPAT': nopat_recente
         }
     except Exception as e:
-        logger.error(f"Erro ao processar valuation para {ticker_sa}: {e}", exc_info=False) # exc_info=False para não poluir os logs
+        logger.error(f"Erro ao processar valuation para {ticker_sa}: {e}", exc_info=False)
         return None
 
-# ##########################################################################
-# FUNÇÃO ATUALIZADA PARA PROCESSAR UMA EMPRESA DE CADA VEZ
-# ##########################################################################
 def run_full_valuation_analysis(df_empresa_unica: pd.DataFrame, ticker_map: pd.DataFrame) -> List[Dict[str, Any]]:
-    """
-    Orquestra a análise de valuation para UMA ÚNICA empresa.
-    Esta função foi adaptada para a nova lógica de baixo consumo de memória,
-    onde o loop principal é feito no flask_app.py.
-    """
-    # 1. Validação inicial: se o DataFrame da empresa estiver vazio, não há o que fazer.
     if df_empresa_unica.empty:
         return []
 
-    # 2. Obtém o código CVM do DataFrame recebido. Como todos os dados são da mesma empresa,
-    #    podemos pegar o valor da primeira linha.
-    codigo_cvm = df_empresa_unica['CD_CVM'].iloc[0]
+    # ## CORREÇÃO ##: Usando 'cd_cvm' em minúsculo para acessar a coluna.
+    codigo_cvm = df_empresa_unica['cd_cvm'].iloc[0]
 
-    # 3. Usa o mapa de tickers para encontrar o ticker correspondente ao CVM.
     ticker_info = ticker_map[ticker_map['CD_CVM'] == codigo_cvm]
     if ticker_info.empty:
         logger.warning(f"Ticker não encontrado para o CVM {codigo_cvm}. Pulando análise.")
         return []
     ticker = ticker_info['TICKER'].iloc[0]
 
-    # 4. Pula a análise para empresas financeiras ou outras exceções definidas.
     if ticker in VALUATION_CONFIG["EMPRESAS_EXCLUIDAS"]:
         return []
 
-    # 5. Obtém dados de mercado (taxa SELIC, IBOV). A função usa cache para não refazer o download a cada chamada.
     market_data = obter_dados_mercado()
-    
-    # 6. Chama a função de processamento que faz os cálculos pesados para esta única empresa.
     resultado = processar_valuation_empresa(f"{ticker.upper()}.SA", df_empresa_unica, market_data)
     
-    # 7. Se não houver resultado, retorna uma lista vazia.
     if not resultado:
         return []
 
-    # 8. Aplica um filtro de sanidade para remover resultados com valores extremos (ex: WACC muito alto/baixo).
     wacc_ok = 0.01 < resultado.get('WACC', 1) < 0.40
     upside_ok = -0.99 < resultado.get('Upside', 0) < 10.0
     
     if wacc_ok and upside_ok:
-        # Se passar no filtro, retorna o resultado dentro de uma lista.
         return [resultado]
     else:
         logger.warning(f"Filtrando empresa {resultado['Ticker']} por resultados extremos: WACC={resultado.get('WACC', 'N/A'):.2%}, Upside={resultado.get('Upside', 'N/A'):.2%}")
-        # Se não passar, retorna uma lista vazia.
         return []
