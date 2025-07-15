@@ -174,7 +174,7 @@ def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> T
 def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List[int]) -> Tuple[Dict, str]:
     """Orquestra a análise completa do Modelo Fleuriet para uma empresa ao longo de vários anos."""
     all_results = []
-    company_name = company_df['DENOM_CIA'].iloc[0] if not company_df.empty else f"Empresa CVM {cvm_code}"
+    company_name = company_df['denom_cia'].iloc[0] if not company_df.empty else f"Empresa CVM {cvm_code}"
     company_df['DT_REFER'] = pd.to_datetime(company_df['DT_REFER'])
 
     for year in sorted(years):
