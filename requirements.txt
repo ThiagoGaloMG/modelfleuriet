@@ -4,19 +4,20 @@
 flask==3.0.2
 gunicorn==21.2.0
 python-dotenv==1.0.1
-flask-cors==3.0.10
-
+flask-cors==3.0.10 # Adicionado para habilitar CORS para o frontend React
 
 # Dependências de análise de dados
 pandas==2.2.1
 numpy==1.26.4
 SQLAlchemy==2.0.28
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.9 # Para conexão com PostgreSQL do Render
 scipy==1.14.0
 openpyxl==3.1.2
-scikit-learn==1.2.2
+scikit-learn==1.2.2 # Para AdvancedRanking (KMeans, StandardScaler)
 
-# Dependências "internalizadas" da defeatbeta-api
-duckdb>=1.0.0
-requests>=2.32.0
-pyarrow>=14.0.0
+# Removendo dependências de APIs externas ou não utilizadas
+# requests (geralmente uma dependência transitiva, mas manter se for usada por web scraping da Selic)
+# beautifulsoup4 (para web scraping da Selic)
+# duckdb
+# pyarrow
+# yfinance
