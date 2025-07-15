@@ -4,16 +4,32 @@ services:
     region: oregon
     plan: free
     env: python
-    runtime: python
+    # O diretório raiz do seu repositório. '.' está correto.
+    rootDir: .
     buildCommand: |
+      # 1. Instala as dependências do Python (backend)
       pip install -r requirements.txt
-    startCommand: gunicorn flask_app:app
+      
+      # 2. Navega para a pasta do frontend
+      cd frontend
+      
+      # 3. Instala as dependências do Node.js (React)
+      npm install
+      
+      # 4. Compila a aplicação React, criando a pasta 'dist'
+      npm run build
+    startCommand: "gunicorn flask_app:app"
     envVars:
       - key: SECRET_KEY
-        value: fPBcJhn71BhNv8VgAgMw1L9Wz3Jse8hWxSpubPeuqk-
+        generateValue: true # Mais seguro que deixar a chave no código
       - key: PYTHON_VERSION
         value: '3.10.13'
       - key: DATABASE_URL
         fromDatabase:
-          name: modelfleuriet-db
+          name: modelfleuriet-db # Verifique se este é o nome correto do seu DB na Render
           property: connectionString
+
+# Adicione a definição do seu banco de dados se ainda não estiver aqui
+databases:
+  - name: modelfleuriet-db
+    plan: free
