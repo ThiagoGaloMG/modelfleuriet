@@ -84,7 +84,6 @@ def get_companies_list(engine, ticker_mapping_df):
         
         final_df = pd.merge(df_companies_db, ticker_mapping_df, on='CD_CVM', how='left')
         
-        # CORREÇÃO: Removido o 'inplace=True' para evitar o FutureWarning
         final_df['TICKER'] = final_df['TICKER'].fillna('S/TICKER')
         
         logger.info(f"{len(final_df)} empresas encontradas e mapeadas com sucesso.")
@@ -117,9 +116,6 @@ def ensure_valuation_table_exists(engine):
         logger.error(f"Erro ao criar tabela valuation_results: {e}", exc_info=True)
         return False
 
-# ##########################################################################
-# FUNÇÃO ATUALIZADA PARA NÃO USAR TODA A MEMÓRIA
-# ##########################################################################
 def run_valuation_worker_if_needed(engine):
     if engine is None: return
     try:
@@ -135,7 +131,6 @@ def run_valuation_worker_if_needed(engine):
                 logger.error("Mapeamento de tickers não pôde ser carregado. Abortando worker.")
                 return
 
-            # 1. Pega apenas a lista de empresas (códigos CVM)
             with engine.connect() as connection:
                 company_codes_df = pd.read_sql('SELECT DISTINCT "cd_cvm" FROM financial_data', connection)
             
@@ -143,25 +138,23 @@ def run_valuation_worker_if_needed(engine):
             total_companies = len(company_codes_df)
             logger.info(f"Encontradas {total_companies} empresas para analisar.")
 
-            # 2. Faz um loop, processando UMA empresa de cada vez
             for index, row in company_codes_df.iterrows():
-                cvm_code = row['cd_cvm']
+                # ## CORREÇÃO 1: ERRO `numpy.int64` ##
+                # Converte explicitamente o código CVM para um int nativo do Python.
+                # O driver do banco de dados (psycopg2) não sabe como lidar com o tipo 'numpy.int64' do Pandas.
+                cvm_code = int(row['cd_cvm'])
+                
                 logger.info(f"Processando empresa {index + 1}/{total_companies} (CVM: {cvm_code})...")
                 
-                # 3. Pega os dados de APENAS a empresa atual do loop
                 with engine.connect() as connection:
                     query = text('SELECT * FROM financial_data WHERE "cd_cvm" = :cvm_code')
                     df_company_data = pd.read_sql(query, connection, params={'cvm_code': cvm_code})
 
-                # 4. Roda a análise para essa única empresa
                 if not df_company_data.empty:
-                    # A função run_full_valuation_analysis pode precisar de ajuste para rodar com dados de uma só empresa
-                    # Assumindo que ela pode fazer isso:
                     valuation_result = run_full_valuation_analysis(df_company_data, df_tickers)
                     if valuation_result:
                         all_valuation_results.extend(valuation_result)
 
-            # 5. Salva todos os resultados no banco de uma vez no final
             if all_valuation_results:
                 df_results = pd.DataFrame(all_valuation_results)
                 df_results.to_sql('valuation_results', engine, if_exists='replace', index=False, chunksize=100)
@@ -187,7 +180,13 @@ def index():
         if request.method == 'GET':
             return render_template('index.html', companies=companies_list)
 
-        cvm_code = int(request.form.get('cvm_code'))
+        # ## CORREÇÃO 2: ERRO `int(None)` ##
+        # Verifica se o 'cvm_code' foi enviado pelo formulário antes de tentar convertê-lo.
+        cvm_code_str = request.form.get('cvm_code')
+        if not cvm_code_str:
+            return render_template('index.html', companies=companies_list, error="Por favor, selecione uma empresa.")
+        
+        cvm_code = int(cvm_code_str)
         start_year = int(request.form.get('start_year'))
         end_year = int(request.form.get('end_year'))
         years_to_analyze = list(range(start_year, end_year + 1))
@@ -236,7 +235,6 @@ def get_valuation_data():
         logger.error(f"Erro ao buscar dados de valuation: {e}", exc_info=True)
         return jsonify({"error": "Falha ao acessar os resultados da análise de valuation."}), 500
 
-# O resto do arquivo permanece o mesmo...
 @app.route('/run_valuation_worker', methods=['POST'])
 def run_valuation_worker_manual():
     try:
