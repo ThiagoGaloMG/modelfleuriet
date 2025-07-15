@@ -37,22 +37,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- Configuração de Caminhos (Paths) ---
-# Esta é a parte mais crítica para o deploy no Render.
-# A lógica abaixo assume que o Render executa o script de dentro de um diretório 'src'.
-
-# O diretório onde este script (flask_app.py) está localizado. No Render: '/opt/render/project/src'.
-SRC_ROOT = os.path.dirname(os.path.abspath(__file__))
-# O diretório raiz do projeto completo. No Render: '/opt/render/project'.
-PROJECT_ROOT = os.path.abspath(os.path.join(SRC_ROOT, '..'))
+# CORREÇÃO: Simplificação da lógica de caminhos.
+# No ambiente da Render, o diretório raiz do seu projeto é onde o script está.
+# os.path.dirname(__file__) aponta para '/opt/render/project/src' no servidor.
+# Vamos usar este como nosso único ponto de referência.
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # Adiciona o diretório 'core' ao path do Python para que os imports funcionem.
-CORE_PATH = os.path.join(SRC_ROOT, 'core')
+CORE_PATH = os.path.join(PROJECT_ROOT, 'core')
 if CORE_PATH not in sys.path:
     sys.path.insert(0, CORE_PATH)
 
-logger.info(f"Project Root: {PROJECT_ROOT}")
-logger.info(f"Source Root (SRC_ROOT): {SRC_ROOT}")
-logger.info(f"Core Path (added to sys.path): {CORE_PATH}")
+logger.info(f"Project Root (base para todos os caminhos): {PROJECT_ROOT}")
+logger.info(f"Core Path (adicionado ao sys.path): {CORE_PATH}")
 
 # --- Imports dos Módulos do Projeto ---
 # Importados APÓS a configuração do sys.path.
@@ -108,6 +105,7 @@ def get_db_manager():
 def get_ticker_mapping_df():
     global ticker_mapping_df
     if ticker_mapping_df is None:
+        # CORREÇÃO: Caminho para o CSV agora usa o PROJECT_ROOT corrigido.
         file_path = os.path.join(PROJECT_ROOT, 'data', 'mapeamento_tickers.csv')
         logger.info(f"Carregando mapeamento de tickers de {file_path}...")
         try:
@@ -116,6 +114,9 @@ def get_ticker_mapping_df():
             df['CD_CVM'] = pd.to_numeric(df['CD_CVM'], errors='coerce').dropna().astype(int)
             ticker_mapping_df = df[['CD_CVM', 'TICKER', 'NOME_EMPRESA']].drop_duplicates(subset=['CD_CVM'])
             logger.info(f"{len(ticker_mapping_df)} mapeamentos carregados.")
+        except FileNotFoundError:
+            logger.error(f"ARQUIVO NÃO ENCONTRADO: Não foi possível encontrar '{file_path}'. Verifique se o arquivo está no local correto no repositório.")
+            ticker_mapping_df = pd.DataFrame() # Define como vazio para evitar erros posteriores
         except Exception as e:
             logger.error(f"Erro ao carregar mapeamento de tickers de '{file_path}': {e}", exc_info=True)
             ticker_mapping_df = pd.DataFrame()
@@ -152,13 +153,13 @@ def serve_react_app(path):
     - Se o caminho solicitado (e.g., /assets/index.js) for um arquivo real na pasta de build, ele é servido.
     - Se for uma rota de navegação (e.g., /dashboard), o index.html é servido para que o React Router assuma.
     """
-    if app.static_folder:
-        if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
-            return send_from_directory(app.static_folder, path)
-        else:
-            return send_from_directory(app.static_folder, 'index.html')
-    logger.error(f"A pasta estática (static_folder) não foi encontrada ou configurada: {app.static_folder}")
-    return "Erro de configuração do servidor: Frontend não encontrado.", 404
+    if app.static_folder and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    elif app.static_folder and os.path.exists(os.path.join(app.static_folder, 'index.html')):
+        return send_from_directory(app.static_folder, 'index.html')
+    else:
+        logger.error(f"Arquivo 'index.html' não encontrado na pasta estática: {app.static_folder}")
+        return jsonify({"error": "Frontend não encontrado. Verifique a configuração de build."}), 404
 
 # --- Rotas de API ---
 
