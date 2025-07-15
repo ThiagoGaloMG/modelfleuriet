@@ -10,13 +10,14 @@ from scipy import stats
 from functools import lru_cache
 from datetime import datetime
 from typing import Dict, List, Any
+import time # Importar a biblioteca de tempo
 
 # --- Configuração Básica ---
 warnings.filterwarnings("ignore")
 logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 
-# --- Configurações Centralizadas para a Análise de Valuation ---
+# --- Configurações Centralizadas ---
 VALUATION_CONFIG = {
     "PERIODO_BETA_IBOV": "5y",
     "CONTAS_CVM": {
@@ -80,7 +81,14 @@ def calcular_beta(ticker: str, ibov_data: pd.DataFrame) -> float:
         return 1.0
 
 def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market_data: Dict[str, Any]) -> Dict[str, Any] | None:
+    """
+    Executa todos os cálculos de valuation para uma única empresa.
+    """
     try:
+        # ## CORREÇÃO ANTI-BLOQUEIO ##
+        # Adiciona uma pausa de meio segundo antes de cada consulta para não sobrecarregar a API do Yahoo
+        time.sleep(0.5)
+
         if df_empresa.empty: return None
 
         info = yf.Ticker(ticker_sa).info
