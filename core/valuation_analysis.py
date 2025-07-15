@@ -87,7 +87,7 @@ def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market
     try:
         # ## CORREÇÃO ANTI-BLOQUEIO ##
         # Adiciona uma pausa de meio segundo antes de cada consulta para não sobrecarregar a API do Yahoo
-        time.sleep(0.5)
+        time.sleep(2)
 
         if df_empresa.empty: return None
 
