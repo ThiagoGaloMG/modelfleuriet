@@ -5,7 +5,7 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple, Union, Any
 from dataclasses import dataclass
 import logging
-# ## CORREÇÃO ##: O nome do arquivo foi ajustado para o correto.
+# ## CORREÇÃO PRINCIPAL ##: O nome do arquivo foi ajustado para o correto.
 from core.financial_metrics_calculator import FinancialMetricsCalculator # Importa a calculadora
 from core.data_collector import CompanyFinancialData # Importa o dataclass da empresa
 from core.ibovespa_utils import get_market_sectors # Para rankings por setor
@@ -82,15 +82,16 @@ class AdvancedRanking:
         processed_data = []
         all_scores = { 'eva': [], 'efv': [], 'upside': [], 'profitability': [], 'liquidity': [] }
         
-        # Primeiro, calcula todos os scores
+        # Passo 1: Calcular todos os scores brutos para todas as empresas
         for ticker, data in companies_data.items():
             beta = 1.0
             _, eva_pct = self.calculator.calculate_eva(data, beta)
             efv_abs, efv_pct = self.calculator.calculate_efv(data, beta)
             upside = self.calculator.calculate_upside(data, efv_abs) if not np.isnan(efv_abs) else 0
-            profitability_score = (data.net_income / data.revenue) if data.revenue > 0 else 0
-            liquidity_score = (data.current_assets / data.current_liabilities) if data.current_liabilities > 0 else 0
+            profitability_score = (data.net_income / data.revenue) if data.revenue is not None and data.revenue > 0 else 0
+            liquidity_score = (data.current_assets / data.current_liabilities) if data.current_liabilities is not None and data.current_liabilities > 0 else 0
             
+            # Adiciona os scores brutos às listas
             all_scores['eva'].append(eva_pct if not np.isnan(eva_pct) else 0)
             all_scores['efv'].append(efv_pct if not np.isnan(efv_pct) else 0)
             all_scores['upside'].append(upside if not np.isnan(upside) else 0)
@@ -103,14 +104,14 @@ class AdvancedRanking:
                 'profitability_score': profitability_score, 'liquidity_score': liquidity_score
             })
             
-        # Normaliza todos os scores de uma vez
+        # Passo 2: Normalizar cada lista de scores de uma vez (mais eficiente e correto)
         scaled_scores = {}
         for key, values in all_scores.items():
-            if values:
+            if values: # Garante que a lista não está vazia
                 scaled_values = self.min_max_scaler.fit_transform(np.array(values).reshape(-1, 1))
                 scaled_scores[key] = scaled_values.flatten()
 
-        # Calcula o score final para cada empresa
+        # Passo 3: Calcular o score final ponderado para cada empresa
         for i, company in enumerate(processed_data):
             company['final_score'] = (
                 scaled_scores.get('eva', [0]*len(processed_data))[i] * criteria.eva_weight +
@@ -145,16 +146,18 @@ class AdvancedRanking:
             opportunities['best_opportunities'].append([row['ticker'], ", ".join(reason), row['simple_combined_score']])
 
         features = all_metrics_df[['eva_pct', 'efv_pct', 'upside_pct']]
+        # Ajuste para KMeans
         if len(features) >= 3:
             scaled_features = self.scaler.fit_transform(features)
             try:
+                # ## MELHORIA ##: n_init='auto' para evitar FutureWarning
                 kmeans = KMeans(n_clusters=min(len(features), 3), random_state=42, n_init='auto')
                 all_metrics_df['cluster'] = kmeans.fit_predict(scaled_features)
                 for cluster_id in sorted(all_metrics_df['cluster'].unique()):
                     cluster_companies = all_metrics_df[all_metrics_df['cluster'] == cluster_id]['ticker'].tolist()
                     opportunities['clusters'][f"Cluster {cluster_id + 1}"] = cluster_companies
             except Exception as e:
-                logger.warning(f"Erro no clustering K-Means: {e}")
+                logger.warning(f"Erro ao realizar clustering K-Means: {e}")
         else:
             logger.info("Dados insuficientes para clustering.")
 
@@ -181,8 +184,7 @@ class PortfolioOptimizer:
         for ticker, data in companies_data.items():
             beta = 1.0
             _, eva_pct = self.calculator.calculate_eva(data, beta)
-            _, efv_pct = self.calculator.calculate_efv(data, beta)
-            efv_abs, _ = self.calculator.calculate_efv(data, beta) # Para o upside
+            efv_abs, efv_pct = self.calculator.calculate_efv(data, beta)
             upside = self.calculator.calculate_upside(data, efv_abs) if not np.isnan(efv_abs) else 0
             score = (eva_pct if not np.isnan(eva_pct) else 0) + \
                     (efv_pct * 1.5 if not np.isnan(efv_pct) else 0) + \
@@ -197,7 +199,14 @@ class PortfolioOptimizer:
         if total_score == 0: return {row['ticker']: 1/len(df) for _, row in df.iterrows()}
         
         df['weight'] = df['score'] / total_score
-        return {row['ticker']: round(row['weight'], 4) for _, row in df.iterrows()}
+        
+        # Normalização final para garantir que a soma seja 1.0
+        final_weights = {row['ticker']: round(row['weight'], 4) for _, row in df.iterrows()}
+        weight_sum = sum(final_weights.values())
+        if weight_sum > 0:
+            final_weights = {ticker: weight / weight_sum for ticker, weight in final_weights.items()}
+            
+        return final_weights
 
     def calculate_portfolio_eva(self, portfolio_weights: Dict[str, float], companies_data: Dict[str, CompanyFinancialData]) -> Tuple[float, float]:
         """Calcula o EVA (absoluto e percentual) de um portfólio."""
