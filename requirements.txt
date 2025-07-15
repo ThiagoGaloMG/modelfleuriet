@@ -1,14 +1,19 @@
+# requirements.txt
+
+# Dependências do Flask e da aplicação web
 flask==3.0.2
-pandas==2.2.1
 gunicorn==21.2.0
+python-dotenv==1.0.1
+
+# Dependências de análise de dados
+pandas==2.2.1
+numpy==1.26.4
 SQLAlchemy==2.0.28
 psycopg2-binary==2.9.9
-numpy==1.26.4
-python-dotenv==1.0.1
-chardet==5.2.0
-tqdm==4.66.2
-pyarrow==14.0.1
-openpyxl==3.1.2
-yfinance==0.2.40
 scipy==1.14.0
-psutil==5.9.8
+openpyxl==3.1.2
+
+# Dependências "internalizadas" da defeatbeta-api
+duckdb>=1.0.0
+requests>=2.32.0
+pyarrow>=14.0.0
