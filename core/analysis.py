@@ -1,217 +1,152 @@
+# modelfleuriet/core/analysis.py
+
 import pandas as pd
-from typing import Dict, Tuple, List, Optional
 import numpy as np
 import logging
+from typing import Dict, List, Tuple, Optional, Any
 
-# Configuração do logger para este módulo
 logger = logging.getLogger(__name__)
 
-def safe_divide(numerator, denominator):
-    """Realiza a divisão de forma segura, retornando None se o denominador for 0, None ou NaN."""
-    if denominator is None or pd.isna(denominator) or denominator == 0:
-        return None
-    if numerator is None or pd.isna(numerator):
-        return None
-    return numerator / denominator
+def calculate_fleuriet_metrics(df_company: pd.DataFrame, cvm_code: int, year: int) -> Dict[str, float]:
+    """
+    Calcula as métricas do Modelo Fleuriet para um ano específico a partir de um DataFrame de dados CVM.
+    """
+    # Filtrar dados da empresa para o ano e tipo de demonstração (DFP - Demonstrações Financeiras Padronizadas)
+    # Prioriza ST_CONTA = 'D' (DFP Consolidado) ou 'DFP' se houver
+    # Se não, pega o que tiver (pode ser 'I' de ITR)
+    df_year = df_company[
+        (df_company['DT_REFER'].dt.year == year) &
+        (df_company['ST_CONTA'].isin(['D', 'DFP'])) # Prioriza DFP
+    ].copy()
 
-# Mapeamento de contas unificado para ambas as análises (Fleuriet e Valuation)
-UNIFIED_ACCOUNT_MAPPING = {
-    # ATIVOS
-    '1': 'Ativo_Total',
-    '1.01.01': 'T_CaixaEquivalentes',
-    '1.01.02': 'T_AplicacoesFinanceiras',
-    '1.01.03': 'AC_Clientes',
-    '1.01.04': 'AC_Estoques',
-    '1.01.06': 'AC_Outros', # Ativos Biológicos
-    '1.01.07': 'AC_Outros', # Tributos a Recuperar
-    '1.01.08': 'AC_Outros', # Outras Contas a Receber
-    '1.02': 'ANC',
-    
-    # PASSIVOS
-    '2.01.01': 'PC_Outros', # Obrigações Sociais e Trabalhistas
-    '2.01.02': 'PC_Fornecedores',
-    '2.01.03': 'PC_Outros', # Obrigações Fiscais
-    '2.01.04': 'T_DividaCurtoPrazo',
-    '2.01.05': 'PC_Outros', # Outras Obrigações
-    '2.02': 'PNC_Total', # Passivo Não Circulante Total
-    '2.02.01': 'T_DividaLongoPrazo',
-    '2.03': 'PL',
-    
-    # DRE
-    '3.01': 'DRE_Receita',
-    '3.02': 'DRE_Custo',
-    '3.05': 'DRE_LucroOperacional', # Também é o EBIT
-    '3.07': 'DRE_DespesasFinanceiras',
-    '3.09': 'DRE_LucroAntesImpostos',
-    '3.10': 'DRE_ImpostoRendaCSLL',
-    '3.11': 'DRE_LucroLiquido'
-}
+    if df_year.empty:
+        df_year = df_company[
+            (df_company['DT_REFER'].dt.year == year) &
+            (df_company['ST_CONTA'].isin(['I', 'ITR'])) # Tenta ITR se DFP não encontrado
+        ].copy()
+        if df_year.empty:
+            logger.warning(f"Nenhum dado DFP/ITR encontrado para o ano {year} para a empresa CVM {cvm_code}.")
+            return {}
 
-def reclassify_and_sum(df: pd.DataFrame) -> Dict[str, float]:
-    """Reclassifica as contas e soma os valores por categoria usando o mapeamento unificado."""
-    # ## CORREÇÃO ##: Nomes das colunas em minúsculo ('CD_CONTA' -> 'cd_conta', 'VL_CONTA' -> 'vl_conta')
-    df['CATEGORY'] = df['cd_conta'].astype(str).str.strip().apply(
-        lambda x: UNIFIED_ACCOUNT_MAPPING.get(x, 'Outros')
-    )
-    summed_data = df.groupby('CATEGORY')['vl_conta'].sum().to_dict()
-    return summed_data
+    # Função auxiliar para buscar valores de contas
+    def get_account_value(df_filtered: pd.DataFrame, account_code: str, default_value: float = 0.0) -> float:
+        # Pega o valor da conta mais recente para o ano, se houver duplicatas
+        val = df_filtered[df_filtered['CD_CONTA'] == account_code]['VL_CONTA'].iloc[0] if not df_filtered[df_filtered['CD_CONTA'] == account_code].empty else default_value
+        return float(val) if pd.notna(val) else default_value
 
-def calculate_fleuriet_indicators(reclassified_data: Dict) -> Tuple[Dict, str]:
-    """Calcula os indicadores base do modelo Fleuriet."""
-    ac_clientes = reclassified_data.get('AC_Clientes', 0.0)
-    ac_estoques = reclassified_data.get('AC_Estoques', 0.0)
-    ac_outros = reclassified_data.get('AC_Outros', 0.0)
+    # Coleta de dados para o Modelo Fleuriet
+    # As contas são baseadas nas nomenclaturas da CVM e no seu TCC.
+    # É crucial que o preprocess_to_db_light.py insira essas contas corretamente.
     
-    pc_fornecedores = reclassified_data.get('PC_Fornecedores', 0.0)
-    pc_outros = reclassified_data.get('PC_Outros', 0.0)
+    ac = get_account_value(df_year, '1.01') # Ativo Circulante
+    pc = get_account_value(df_year, '2.01') # Passivo Circulante
+    est = get_account_value(df_year, '1.01.04') # Estoques
+    cr = get_account_value(df_year, '1.01.03') # Contas a Receber
+    forn = get_account_value(df_year, '2.01.02') # Fornecedores
+    
+    # Ativo Realizável a Longo Prazo (ARLP) - Usar 1.02.01 (Ativo Não Circulante - Investimentos) ou 1.02 para Ativo Não Circulante Total
+    # No TCC, ARLP é usado para calcular Capital de Giro Próprio (CGP)
+    arlp = get_account_value(df_year, '1.02.01') # Ativo Não Circulante - Investimentos
+    if arlp == 0: # Se 1.02.01 for zero, tenta 1.02 (Ativo Não Circulante total)
+        arlp = get_account_value(df_year, '1.02')
 
-    # NCG (Necessidade de Capital de Giro)
-    ativos_ciclicos = ac_clientes + ac_estoques + ac_outros
-    passivos_ciclicos = pc_fornecedores + pc_outros
-    NCG = ativos_ciclicos - passivos_ciclicos
+    pnc = get_account_value(df_year, '2.02') # Passivo Não Circulante
+    pl = get_account_value(df_year, '2.03') # Patrimônio Líquido
     
-    # CDG (Capital de Giro)
-    pl = reclassified_data.get('PL', 0.0)
-    pnc = reclassified_data.get('PNC_Total', 0.0)
-    anc = reclassified_data.get('ANC', 0.0)
-    CDG = (pl + pnc) - anc
-    
-    # T (Tesouraria)
-    T = CDG - NCG
-    
-    # Classificação da estrutura financeira
-    tipo_estrutura_num = 0
-    if CDG > 0 and NCG > 0 and T >= 0: tipo_estrutura_num = 1; tipo_estrutura_desc = "Estrutura Ótima"
-    elif CDG > 0 and NCG > 0 and T < 0: tipo_estrutura_num = 2; tipo_estrutura_desc = "Alto Risco"
-    elif CDG > 0 and NCG < 0: tipo_estrutura_num = 3; tipo_estrutura_desc = "Estrutura Sólida"
-    elif CDG < 0 and NCG > 0: tipo_estrutura_num = 4; tipo_estrutura_desc = "Risco Máximo"
-    elif CDG < 0 and NCG < 0 and T < 0: tipo_estrutura_num = 5; tipo_estrutura_desc = "Estrutura Péssima"
-    elif CDG < 0 and NCG < 0 and T >= 0: tipo_estrutura_num = 6; tipo_estrutura_desc = "Risco Elevado"
-    else: tipo_estrutura_desc = "Não Identificada"
+    # Ativo Permanente (AP) - Usar 1.02 (Ativo Não Circulante)
+    ap = get_account_value(df_year, '1.02') # Ativo Não Circulante
 
-    base_indicators = {'NCG': NCG, 'CDG': CDG, 'T': T, 'TipoEstrutura': tipo_estrutura_num}
-    return base_indicators, tipo_estrutura_desc
+    caixa = get_account_value(df_year, '1.01.01') # Caixa e Equivalentes
 
-def calculate_advanced_indicators(reclassified_data: Dict, base_indicators: Dict) -> Dict:
-    """Calcula indicadores avançados como prazos médios e ROIC de forma segura."""
-    vendas = reclassified_data.get('DRE_Receita')
-    custo = reclassified_data.get('DRE_Custo')
-    lucro_op = reclassified_data.get('DRE_LucroOperacional')
-    ac_clientes = reclassified_data.get('AC_Clientes')
-    ac_estoques = reclassified_data.get('AC_Estoques')
-    pc_fornecedores = reclassified_data.get('PC_Fornecedores')
-    ativo_total = reclassified_data.get('Ativo_Total')
-    t = base_indicators.get('T')
-    anc = reclassified_data.get('ANC')
-    ncg = base_indicators.get('NCG')
+    # --- Cálculos do Modelo Fleuriet ---
+    # Necessidade de Capital de Giro (NCG)
+    ncg = (est + cr) - forn
 
-    compras = custo + ac_estoques if all(v is not None for v in [custo, ac_estoques]) else None
-    ratio_pmr = safe_divide(ac_clientes, vendas)
-    pmr = ratio_pmr * 365 if ratio_pmr is not None else None
-    ratio_pme = safe_divide(ac_estoques, custo)
-    pme = ratio_pme * 365 if ratio_pme is not None else None
-    ratio_pmp = safe_divide(pc_fornecedores, compras)
-    pmp = ratio_pmp * 365 if ratio_pmp is not None else None
-    
-    ciclo_financeiro = None
-    if all(p is not None for p in [pmr, pme, pmp]):
-        ciclo_financeiro = pmr + pme - pmp
-            
-    ild = safe_divide(t, (anc + ncg)) if all(v is not None for v in [t, anc, ncg]) else None
-    roic = safe_divide(lucro_op, ativo_total)
-    roic_percent = roic * 100 if roic is not None else None
+    # Capital de Giro (CG)
+    cg = ac - pc
+
+    # Capital de Giro Próprio (CGP)
+    cgp = pl + pnc - ap
+    # Ou, se AP = Ativo Não Circulante: cgp = pl + pnc - Ativo Nao Circulante
+
+    # Saldo em Tesouraria (T)
+    t = cg - ncg
+
+    # Situação Financeira (Tesouraria)
+    situacao_financeira = ""
+    interpretacao = ""
+
+    if t > 0:
+        situacao_financeira = "Saudável (Tesouraria Positiva)"
+        interpretacao = "A empresa possui excedente de recursos de Capital de Giro, indicando uma boa saúde financeira e capacidade de honrar compromissos de curto prazo."
+    elif t < 0:
+        situacao_financeira = "Problemática (Tesouraria Negativa)"
+        interpretacao = "A empresa está com escassez de Capital de Giro, podendo enfrentar dificuldades para honrar suas obrigações de curto prazo. Necessita de atenção e possíveis ajustes financeiros."
+    else:
+        situacao_financeira = "Equilibrada (Tesouraria Zero)"
+        interpretacao = "A empresa possui um equilíbrio entre suas necessidades e fontes de Capital de Giro. Uma situação neutra que pode ser otimizada."
 
     return {
-        'PMR': pmr, 'PME': pme, 'PMP': pmp, 
-        'Ciclo_Financeiro': ciclo_financeiro,
-        'ILD': ild, 'ROIC': roic_percent
+        'year': year,
+        'ncg': ncg,
+        'cg': cg,
+        'cgp': cgp,
+        't': t,
+        'situacao_financeira': situacao_financeira,
+        'interpretacao': interpretacao,
+        'raw_data': { # Incluir dados brutos usados para depuração
+            'ac': ac, 'pc': pc, 'est': est, 'cr': cr, 'forn': forn,
+            'arlp': arlp, 'pnc': pnc, 'pl': pl, 'ap': ap, 'caixa': caixa
+        }
     }
 
-def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> Tuple[Optional[float], str]:
-    """Calcula o Z-Score de Prado para predição de insolvência."""
-    cdg = base_indicators.get('CDG')
-    ncg = base_indicators.get('NCG')
-    t = base_indicators.get('T')
-    tipo_estrutura = base_indicators.get('TipoEstrutura')
-    ativo_total = reclassified_data.get('Ativo_Total')
-    receita_liquida = reclassified_data.get('DRE_Receita')
-    pcf = reclassified_data.get('PC_Fornecedores', 0) + reclassified_data.get('PC_Outros', 0) + reclassified_data.get('T_DividaCurtoPrazo', 0)
-    pnc = reclassified_data.get('PNC_Total')
+def run_multi_year_analysis(df_company: pd.DataFrame, cvm_code: int, years_to_analyze: List[int]) -> Tuple[Dict[str, Any], Optional[str]]:
+    """
+    Executa a análise do Modelo Fleuriet para múltiplos anos para uma empresa.
+    Retorna os resultados e um erro se houver.
+    """
+    company_name = df_company['DENOM_CIA'].iloc[0] if not df_company.empty else f"Empresa CVM {cvm_code}"
     
-    if any(v is None for v in [cdg, ncg, t, tipo_estrutura, ativo_total, receita_liquida, pnc]):
-        return None, "Dados insuficientes"
-            
-    x1 = safe_divide(cdg, ativo_total)
-    x2 = safe_divide(ncg, receita_liquida)
-    x3 = float(tipo_estrutura)
-    x4 = safe_divide(t, abs(ncg)) if ncg != 0 else 0
-    x5 = safe_divide((pcf + pnc), ativo_total)
+    all_fleuriet_results = []
+    chart_labels = []
+    chart_ncg = []
+    chart_cdg = []
+    chart_t = []
 
-    if any(x is None for x in [x1, x2, x4, x5]):
-        return None, "Cálculo impossível"
+    for year in sorted(years_to_analyze):
+        metrics = calculate_fleuriet_metrics(df_company, cvm_code, year)
+        if metrics:
+            all_fleuriet_results.append(metrics)
+            chart_labels.append(str(year))
+            chart_ncg.append(metrics['ncg'])
+            chart_cdg.append(metrics['cg']) # CDG é o Capital de Giro (CG)
+            chart_t.append(metrics['t'])
+        else:
+            logger.warning(f"Não foi possível calcular métricas Fleuriet para {company_name} no ano {year}.")
 
-    z = 1.887 + (0.899 * x1) + (0.971 * x2) - (0.444 * x3) + (0.055 * x4) - (0.980 * x5)
+    if not all_fleuriet_results:
+        return {}, f"Nenhum resultado Fleuriet válido encontrado para a empresa CVM {cvm_code} nos anos {years_to_analyze}."
 
-    if z > 2.675: risk_class = "Classe A (Risco Mínimo)"
-    elif 2.0 < z <= 2.675: risk_class = "Classe B"
-    elif 1.5 < z <= 2.0: risk_class = "Classe C"
-    elif 1.0 < z <= 1.5: risk_class = "Classe D (Atenção)"
-    else: risk_class = "Classe E (Risco Elevado)"
-        
-    return round(z, 4), risk_class
+    # Determinar a situação financeira geral (do último ano analisado)
+    latest_year_results = all_fleuriet_results[-1]
 
-def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List[int]) -> Tuple[Dict, str]:
-    """Orquestra a análise completa do Modelo Fleuriet para uma empresa ao longo de vários anos."""
-    all_results = []
-    company_name = company_df['denom_cia'].iloc[0] if not company_df.empty else f"Empresa CVM {cvm_code}"
-    
-    # ## CORREÇÃO ##: Usando 'dt_refer' em minúsculo.
-    company_df['dt_refer'] = pd.to_datetime(company_df['dt_refer'])
-
-    for year in sorted(years):
-        reference_date = pd.to_datetime(f"{year}-12-31")
-        
-        # ## CORREÇÃO ##: Usando 'dt_refer' em minúsculo.
-        df_year = company_df[company_df['dt_refer'] == reference_date].copy()
-        
-        if df_year.empty:
-            logger.warning(f"Nenhum dado encontrado para o ano {year} para a empresa CVM {cvm_code}.")
-            continue
-        
-        try:
-            reclassified_data = reclassify_and_sum(df_year)
-            base_indicators, tipo_estrutura = calculate_fleuriet_indicators(reclassified_data)
-            advanced_indicators = calculate_advanced_indicators(reclassified_data, base_indicators)
-            z_score, z_risk = calculate_z_score_prado(reclassified_data, base_indicators)
-            
-            advanced_indicators['Z_Score'] = z_score
-            advanced_indicators['Z_Risk'] = z_risk
-            
-            all_results.append({
-                'year': year,
-                'base_indicators': base_indicators,
-                'advanced_indicators': advanced_indicators,
-                'structure': tipo_estrutura
-            })
-        except Exception as e:
-            logger.error(f"Erro ao processar o ano {year} para a empresa CVM {cvm_code}: {e}", exc_info=True)
-            return None, f"Erro ao analisar o ano {year}. Verifique os logs."
-    
-    if not all_results:
-        return None, f"Não foram encontrados dados anuais para a empresa CVM {cvm_code} no período de {min(years)} a {max(years)}."
-    
-    chart_data = {
-        'labels': [res['year'] for res in all_results],
-        'ncg': [res['base_indicators']['NCG'] for res in all_results],
-        'cdg': [res['base_indicators']['CDG'] for res in all_results],
-        't': [res['base_indicators']['T'] for res in all_results],
-    }
-    
-    final_result = {
+    return {
         'company_name': company_name,
-        'cvm_code': cvm_code,
-        'yearly_results': all_results,
-        'chart_data': chart_data
-    }
-
-    return final_result, None
+        'cvm_code': str(cvm_code),
+        'start_year': years_to_analyze[0],
+        'end_year': years_to_analyze[-1],
+        'results': { # Resumo do último ano
+            'situacao_financeira': latest_year_results['situacao_financeira'],
+            'interpretacao': latest_year_results['interpretacao'],
+            'ncg_latest': latest_year_results['ncg'],
+            'cg_latest': latest_year_results['cg'],
+            't_latest': latest_year_results['t']
+        },
+        'chart_data': {
+            'labels': chart_labels,
+            'ncg': chart_ncg,
+            'cdg': chart_cdg,
+            't': chart_t
+        },
+        'details_by_year': all_fleuriet_results
+    }, None # Retorna None para o erro, indicando sucesso
