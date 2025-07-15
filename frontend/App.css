@@ -1,0 +1,104 @@
+/* modelfleuriet/frontend/App.css */
+
+/* Estilos básicos para o componente App, se necessário, além do Tailwind */
+.App {
+  font-family: 'Inter', sans-serif;
+  text-align: center;
+}
+
+/* Estilos para a tabela */
+.min-w-full {
+  width: 100%;
+}
+
+.divide-y > * + * {
+  border-top-width: 1px;
+}
+
+.table-header-sortable {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.table-header-sortable:hover {
+  background-color: #e2e8f0; /* slate-200 */
+}
+
+/* Loader spinner */
+.loader {
+  border: 4px solid #f3f3f3; /* Light grey */
+  border-top: 4px solid #3b82f6; /* Blue */
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Estilos para cards de métricas */
+.metric-card {
+  background-color: #ffffff;
+  padding: 1.5rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.metric-card h3 {
+  color: #64748b; /* slate-500 */
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.metric-card p {
+  font-size: 1.875rem; /* 3xl */
+  font-weight: 700;
+  color: #0f172a; /* slate-900 */
+}
+
+.metric-card p.text-green-600 {
+  color: #22c55e;
+}
+
+.metric-card p.text-blue-600 {
+  color: #3b82f6;
+}
+
+/* Estilos para gráfico de dispersão */
+.chart-container {
+  position: relative;
+  width: 100%;
+  max-width: 800px; /* Limita a largura máxima do gráfico */
+  margin-left: auto;
+  margin-right: auto;
+  height: 400px; /* Altura fixa para o gráfico */
+  max-height: 50vh; /* Máximo 50% da altura da viewport */
+}
+
+@media (max-width: 768px) {
+  .chart-container {
+    height: 300px; /* Altura menor em dispositivos móveis */
+    max-height: 40vh;
+  }
+}
+
+/* Estilos para a barra de progresso do portfólio */
+.progress-bar-container {
+  background-color: #e2e8f0; /* slate-200 */
+  border-radius: 9999px; /* Full rounded */
+  height: 0.75rem; /* h-3 */
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar-fill {
+  background-color: #3b82f6; /* blue-500 */
+  height: 100%;
+  border-radius: 9999px; /* Full rounded */
+  transition: width 0.5s ease-in-out;
+}
