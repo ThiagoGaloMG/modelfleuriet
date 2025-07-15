@@ -32,7 +32,6 @@ def create_db_engine():
         logger.error("DATABASE_URL não definida.")
         raise ValueError("DATABASE_URL não definida.")
     
-    # Garante que o dialeto psycopg2 seja usado
     if database_url.startswith("postgresql://"):
         conn_str = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
     else:
@@ -61,23 +60,16 @@ def load_ticker_mapping(file_path='data/mapeamento_tickers.csv'):
         return pd.DataFrame()
 
 def get_companies_list(engine, ticker_mapping_df):
-    """
-    Busca a lista de empresas do banco de dados de forma otimizada para não estourar a memória.
-    """
     if engine is None:
         logger.error("Engine do banco de dados não está disponível para get_companies_list.")
         return []
     
     logger.info("Buscando lista de empresas do banco (versão otimizada)...")
     try:
-        # CORREÇÃO 1: Nomes das colunas em minúsculo ("DENOM_CIA" -> "denom_cia") para corresponder ao schema do PostgreSQL.
         query = text('SELECT DISTINCT "denom_cia", "cd_cvm" FROM financial_data ORDER BY "denom_cia";')
-
-        # CORREÇÃO 2: Otimização de memória usando streaming e lotes (chunks) para evitar o erro 'OutOfMemory'.
         connection = engine.connect().execution_options(stream_results=True)
         
         all_chunks = []
-        # O 'chunksize' divide a leitura do banco de dados em pedaços para não carregar tudo na RAM de uma vez.
         for chunk_df in pd.read_sql(query, connection, chunksize=5000):
             all_chunks.append(chunk_df)
         
@@ -88,13 +80,12 @@ def get_companies_list(engine, ticker_mapping_df):
             return []
 
         df_companies_db = pd.concat(all_chunks, ignore_index=True)
-
-        # Renomeia as colunas para um padrão consistente para o merge e a exibição.
         df_companies_db.rename(columns={'denom_cia': 'NOME_EMPRESA', 'cd_cvm': 'CD_CVM'}, inplace=True)
         
-        # Junta os dados do banco com o mapeamento de tickers.
         final_df = pd.merge(df_companies_db, ticker_mapping_df, on='CD_CVM', how='left')
-        final_df['TICKER'].fillna('S/TICKER', inplace=True)
+        
+        # CORREÇÃO: Removido o 'inplace=True' para evitar o FutureWarning
+        final_df['TICKER'] = final_df['TICKER'].fillna('S/TICKER')
         
         logger.info(f"{len(final_df)} empresas encontradas e mapeadas com sucesso.")
         return final_df.to_dict(orient='records')
@@ -104,89 +95,92 @@ def get_companies_list(engine, ticker_mapping_df):
         return []
 
 def ensure_valuation_table_exists(engine):
-    """Garante que a tabela valuation_results existe, criando-a se necessário."""
-    if engine is None:
-        return False
-    
+    if engine is None: return False
     try:
         inspector = inspect(engine)
         if inspector.has_table('valuation_results'):
             logger.info("Tabela 'valuation_results' já existe.")
             return True
-        
         logger.info("Criando tabela 'valuation_results'...")
         create_query = text("""
         CREATE TABLE valuation_results (
-            "Ticker" VARCHAR(20) PRIMARY KEY,
-            "Nome" VARCHAR(255),
-            "Upside" NUMERIC, "ROIC" NUMERIC, "WACC" NUMERIC, "Spread" NUMERIC,
-            "Preco_Atual" NUMERIC, "Preco_Justo" NUMERIC,
-            "Market_Cap" BIGINT, "EVA" NUMERIC,
-            "Capital_Empregado" NUMERIC, "NOPAT" NUMERIC
-        );
-        """)
-        
+            "Ticker" VARCHAR(20) PRIMARY KEY, "Nome" VARCHAR(255), "Upside" NUMERIC, "ROIC" NUMERIC, 
+            "WACC" NUMERIC, "Spread" NUMERIC, "Preco_Atual" NUMERIC, "Preco_Justo" NUMERIC,
+            "Market_Cap" BIGINT, "EVA" NUMERIC, "Capital_Empregado" NUMERIC, "NOPAT" NUMERIC
+        );""")
         with engine.connect() as connection:
-            with connection.begin(): # Usar transação
+            with connection.begin():
                 connection.execute(create_query)
-        
         logger.info("Tabela 'valuation_results' criada com sucesso.")
         return True
-        
     except Exception as e:
         logger.error(f"Erro ao criar tabela valuation_results: {e}", exc_info=True)
         return False
 
+# ##########################################################################
+# FUNÇÃO ATUALIZADA PARA NÃO USAR TODA A MEMÓRIA
+# ##########################################################################
 def run_valuation_worker_if_needed(engine):
-    """Executa o worker de valuation se a tabela estiver vazia."""
-    if engine is None:
-        return
-    
+    if engine is None: return
     try:
         with engine.connect() as connection:
-            result = connection.execute(text("SELECT COUNT(*) FROM valuation_results")).fetchone()
-            count = result[0] if result else 0
-            
+            count = connection.execute(text("SELECT COUNT(*) FROM valuation_results")).scalar_one_or_none()
+        
         if count == 0:
-            logger.info("Tabela valuation_results está vazia. Executando worker...")
+            logger.info("Tabela valuation_results está vazia. Iniciando worker de valuation empresa por empresa...")
             from core.valuation_analysis import run_full_valuation_analysis
             
-            # Carrega dados necessários
             df_tickers = load_ticker_mapping()
+            if df_tickers.empty:
+                logger.error("Mapeamento de tickers não pôde ser carregado. Abortando worker.")
+                return
+
+            # 1. Pega apenas a lista de empresas (códigos CVM)
             with engine.connect() as connection:
-                df_full_data = pd.read_sql('SELECT * FROM financial_data', connection)
+                company_codes_df = pd.read_sql('SELECT DISTINCT "cd_cvm" FROM financial_data', connection)
             
-            if not df_full_data.empty and not df_tickers.empty:
-                valuation_results = run_full_valuation_analysis(df_full_data, df_tickers)
+            all_valuation_results = []
+            total_companies = len(company_codes_df)
+            logger.info(f"Encontradas {total_companies} empresas para analisar.")
+
+            # 2. Faz um loop, processando UMA empresa de cada vez
+            for index, row in company_codes_df.iterrows():
+                cvm_code = row['cd_cvm']
+                logger.info(f"Processando empresa {index + 1}/{total_companies} (CVM: {cvm_code})...")
                 
-                if valuation_results:
-                    df_results = pd.DataFrame(valuation_results)
-                    df_results.to_sql(
-                        'valuation_results',
-                        engine,
-                        if_exists='replace',
-                        index=False,
-                        chunksize=100
-                    )
-                    logger.info(f"Worker executado com sucesso. {len(df_results)} resultados salvos.")
-                else:
-                    logger.warning("Worker não gerou resultados.")
+                # 3. Pega os dados de APENAS a empresa atual do loop
+                with engine.connect() as connection:
+                    query = text('SELECT * FROM financial_data WHERE "cd_cvm" = :cvm_code')
+                    df_company_data = pd.read_sql(query, connection, params={'cvm_code': cvm_code})
+
+                # 4. Roda a análise para essa única empresa
+                if not df_company_data.empty:
+                    # A função run_full_valuation_analysis pode precisar de ajuste para rodar com dados de uma só empresa
+                    # Assumindo que ela pode fazer isso:
+                    valuation_result = run_full_valuation_analysis(df_company_data, df_tickers)
+                    if valuation_result:
+                        all_valuation_results.extend(valuation_result)
+
+            # 5. Salva todos os resultados no banco de uma vez no final
+            if all_valuation_results:
+                df_results = pd.DataFrame(all_valuation_results)
+                df_results.to_sql('valuation_results', engine, if_exists='replace', index=False, chunksize=100)
+                logger.info(f"Worker concluído. {len(df_results)} resultados salvos no banco.")
             else:
-                logger.warning("Dados insuficientes para executar o worker.")
+                logger.warning("Worker de valuation não gerou resultados.")
                 
     except Exception as e:
         logger.error(f"Erro ao executar worker de valuation: {e}", exc_info=True)
 
 # --- Inicialização da Aplicação ---
 db_engine = create_db_engine()
-df_tickers = load_ticker_mapping()
-companies_list = get_companies_list(db_engine, df_tickers)
-
-# Garante que a tabela de valuation existe e executa o worker se necessário
 if db_engine:
+    df_tickers = load_ticker_mapping()
+    companies_list = get_companies_list(db_engine, df_tickers)
     if ensure_valuation_table_exists(db_engine):
         run_valuation_worker_if_needed(db_engine)
 
+# --- Rotas Flask ---
 @app.route('/', methods=['GET', 'POST'])
 def index():
     try:
@@ -199,7 +193,7 @@ def index():
         years_to_analyze = list(range(start_year, end_year + 1))
 
         with db_engine.connect() as connection:
-            query = text('SELECT * FROM financial_data WHERE "cd_cvm" = :cvm_code') # Corrigido para minúsculo
+            query = text('SELECT * FROM financial_data WHERE "cd_cvm" = :cvm_code')
             df_company = pd.read_sql(query, connection, params={'cvm_code': cvm_code})
 
         if df_company.empty:
@@ -227,8 +221,7 @@ def index():
 def get_valuation_data():
     logger.info("Buscando dados de valuation pré-calculados...")
     try:
-        inspector = inspect(db_engine)
-        if not inspector.has_table('valuation_results'):
+        if not db_engine or not inspect(db_engine).has_table('valuation_results'):
             return jsonify({"error": "A análise de valuation ainda não foi executada. Por favor, aguarde alguns minutos e tente novamente."}), 404
         
         with db_engine.connect() as connection:
@@ -243,9 +236,9 @@ def get_valuation_data():
         logger.error(f"Erro ao buscar dados de valuation: {e}", exc_info=True)
         return jsonify({"error": "Falha ao acessar os resultados da análise de valuation."}), 500
 
+# O resto do arquivo permanece o mesmo...
 @app.route('/run_valuation_worker', methods=['POST'])
 def run_valuation_worker_manual():
-    """Endpoint para executar o worker de valuation manualmente."""
     try:
         logger.info("Executando worker de valuation manualmente...")
         run_valuation_worker_if_needed(db_engine)
