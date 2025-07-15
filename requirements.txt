@@ -4,6 +4,8 @@
 flask==3.0.2
 gunicorn==21.2.0
 python-dotenv==1.0.1
+flask-cors==3.0.10
+
 
 # Dependências de análise de dados
 pandas==2.2.1
@@ -12,6 +14,7 @@ SQLAlchemy==2.0.28
 psycopg2-binary==2.9.9
 scipy==1.14.0
 openpyxl==3.1.2
+scikit-learn==1.2.2
 
 # Dependências "internalizadas" da defeatbeta-api
 duckdb>=1.0.0
