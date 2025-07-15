@@ -1,3 +1,5 @@
+# modelfleuriet/preprocess_to_db_light.py
+
 import pandas as pd
 import zipfile
 import os
@@ -6,10 +8,11 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 import time
 import logging
 from tqdm import tqdm
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus # Ainda útil para URL encoding de senha
 import numpy as np
 from typing import Dict, List, Optional
 import chardet
+from dotenv import load_dotenv # Para carregar .env localmente
 
 # --- CONFIGURAÇÃO ---
 class Config:
@@ -22,18 +25,23 @@ class Config:
         'CD_CVM': 10
     }
     
+    # NOVAS CONFIGURAÇÕES DE DB PARA POSTGRESQL DO RENDER
+    # Estas serão sobrescritas por variáveis de ambiente no Render.
+    # Para teste local, você pode preencher um .env com elas.
     DB_CONFIG = {
-        'host': 'modelfleuriet.mysql.pythonanywhere-services.com',
-        'user': 'modelfleuriet',
-        'password': quote_plus('thg312222'),  # URL encoded
-        'database': 'modelfleuriet$default',
+        'host': os.environ.get('DB_HOST', 'localhost'),
+        'user': os.environ.get('DB_USER', 'postgres'),
+        'password': os.environ.get('DB_PASSWORD', 'postgres'), # Use sua senha real do Render DB
+        'database': os.environ.get('DB_NAME', 'postgres'),
+        'port': os.environ.get('DB_PORT', '5432'),
         'pool_size': 5,
         'max_overflow': 2,
         'pool_timeout': 30,
         'pool_recycle': 3600
     }
     
-    VALID_YEARS = ['2022', '2023', '2024']
+    # Anos para processar. Certifique-se de ter os ZIPs correspondentes.
+    VALID_YEARS = ['2020', '2021', '2022', '2023', '2024'] 
     CHUNK_SIZE = 1000  # Tamanho dos lotes para inserção
     MAX_RETRIES = 3    # Tentativas de reconexão
 
@@ -49,7 +57,7 @@ def setup_logging():
             datefmt='%Y-%m-%d %H:%M:%S'
         )
         
-        # File handler com rotação
+        # File handler (para logs locais)
         file_handler = logging.FileHandler('preprocess.log', encoding='utf-8')
         file_handler.setFormatter(formatter)
         file_handler.setLevel(logging.INFO)
@@ -57,7 +65,7 @@ def setup_logging():
         # Console handler
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
-        console_handler.setLevel(logging.WARNING)
+        console_handler.setLevel(logging.INFO) 
         
         logger.addHandler(file_handler)
         logger.addHandler(console_handler)
@@ -66,27 +74,37 @@ def setup_logging():
 
 logger = setup_logging()
 
+# Carrega variáveis de ambiente (para uso local)
+load_dotenv()
+
 # --- BANCO DE DADOS ---
 class DatabaseManager:
-    """Gerencia conexões e operações no banco de dados"""
+    """Gerencia conexões e operações no banco de dados PostgreSQL (Render/Supabase)"""
     def __init__(self):
         self.engine = self._create_engine()
         self._test_connection()
     
     def _create_engine(self):
-        """Cria engine SQLAlchemy com configurações otimizadas"""
-        connection_string = (
-            f"mysql+pymysql://{Config.DB_CONFIG['user']}:{Config.DB_CONFIG['password']}"
-            f"@{Config.DB_CONFIG['host']}/{Config.DB_CONFIG['database']}"
-            "?charset=utf8mb4&connect_timeout=10"
-        )
+        """Cria engine SQLAlchemy com configurações otimizadas para PostgreSQL"""
+        database_url = os.environ.get('DATABASE_URL') # Do Render (variável injetada)
+        if not database_url:
+            logger.info("DATABASE_URL não definida, tentando construir de DB_CONFIG (para teste local).")
+            user = Config.DB_CONFIG['user']
+            password = quote_plus(Config.DB_CONFIG['password']) # URL encode da senha
+            host = Config.DB_CONFIG['host']
+            port = Config.DB_CONFIG['port']
+            dbname = Config.DB_CONFIG['database']
+            connection_string = f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}"
+        else:
+            connection_string = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+        logger.info(f"Tentando conectar ao DB: {Config.DB_CONFIG['host']}:{Config.DB_CONFIG['port']}/{Config.DB_CONFIG['database']}")
         return create_engine(
             connection_string,
             pool_size=Config.DB_CONFIG['pool_size'],
             max_overflow=Config.DB_CONFIG['max_overflow'],
             pool_timeout=Config.DB_CONFIG['pool_timeout'],
-            pool_recycle=Config.DB_CONFIG['pool_recycle'],
-            pool_pre_ping=True
+            pool_recycle=3600 # Recicla conexões a cada hora
         )
     
     def _test_connection(self, retries: int = Config.MAX_RETRIES):
@@ -120,12 +138,12 @@ class DatabaseManager:
 
 # --- PROCESSAMENTO DE DADOS ---
 class DataProcessor:
-    """Responsável pela transformação e limpeza dos dados"""
+    """Responsável pela transformação e limpeza dos dados da CVM"""
     @staticmethod
     def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-        """Limpeza e preparação dos dados"""
-        # Colunas para remover
-        cols_to_drop = ['VERSAO', 'MOEDA', 'ESCALA_MOEDA', 'ORDEM_EXERC']
+        """Limpeza e preparação dos dados da CVM."""
+        # Colunas para remover (ajustado para o que a CVM realmente tem)
+        cols_to_drop = ['VERSAO', 'MOEDA', 'ESCALA_MOEDA', 'ORDEM_EXERC', 'CD_CONTA_SUP', 'DS_CONTA_SUP']
         df = df.drop(columns=[col for col in cols_to_drop if col in df.columns], errors='ignore')
         
         # Conversão de datas
@@ -150,6 +168,10 @@ class DataProcessor:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.slice(0, max_len)
         
+        # Garante que DENOM_CIA e CNPJ_CIA sejam strings
+        if 'DENOM_CIA' in df.columns: df['DENOM_CIA'] = df['DENOM_CIA'].astype(str)
+        if 'CNPJ_CIA' in df.columns: df['CNPJ_CIA'] = df['CNPJ_CIA'].astype(str)
+
         return df.drop_duplicates()
 
     @staticmethod
@@ -160,26 +182,48 @@ class DataProcessor:
             return chardet.detect(rawdata)['encoding']
 
 class DataLoader:
-    """Carrega dados de diferentes fontes"""
+    """Carrega dados de arquivos ZIP da CVM"""
     @staticmethod
     def load_from_zip(zip_path: str, year: str) -> Optional[pd.DataFrame]:
         """Carrega dados de arquivo ZIP"""
         try:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
+                # Filtrar apenas os arquivos DFP (Demonstrações Financeiras Padronizadas)
+                # DFP - Dados Anuais (DFP_CIA_ABERTA_DRE_CON_202X.csv, DFP_CIA_ABERTA_BPA_CON_202X.csv, etc.)
+                csv_files = [f for f in zip_ref.namelist() if f.startswith(f'dfp_cia_aberta_') and f.endswith(f'_{year}.csv')]
                 
+                # Se não encontrar DFP, tentar ITR (Informações Trimestrais)
+                if not csv_files:
+                    csv_files = [f for f in zip_ref.namelist() if f.startswith(f'itr_cia_aberta_') and f.endswith(f'_{year}.csv')]
+                
+                if not csv_files:
+                    logger.warning(f"Nenhum arquivo CSV DFP/ITR encontrado para {year} no ZIP.")
+                    return None
+
                 all_data = []
                 for csv_file in tqdm(csv_files, desc=f"Processando {year}"):
                     try:
                         with zip_ref.open(csv_file) as f:
-                            df = pd.read_csv(
-                                f,
-                                sep=';',
-                                encoding='latin1',
-                                decimal=',',
-                                dtype={'CD_CONTA': str, 'CD_CVM': 'Int64'},
-                                low_memory=False
-                            )
+                            # Tenta ler com latin1, se der erro, tenta utf-8
+                            try:
+                                df = pd.read_csv(
+                                    f,
+                                    sep=';',
+                                    encoding='latin1',
+                                    decimal=',',
+                                    dtype={'CD_CONTA': str, 'CD_CVM': 'Int64', 'CNPJ_CIA': str},
+                                    low_memory=False
+                                )
+                            except UnicodeDecodeError:
+                                f.seek(0) # Volta o ponteiro para o início do arquivo
+                                df = pd.read_csv(
+                                    f,
+                                    sep=';',
+                                    encoding='utf-8',
+                                    decimal=',',
+                                    dtype={'CD_CONTA': str, 'CD_CVM': 'Int64', 'CNPJ_CIA': str},
+                                    low_memory=False
+                                )
                             all_data.append(df)
                     except Exception as e:
                         logger.error(f"Erro ao ler {csv_file}: {str(e)}")
@@ -195,7 +239,7 @@ class DataLoader:
 
 # --- GERENCIAMENTO DE PROCESSO ---
 class ETLPipeline:
-    """Orquestra todo o processo ETL"""
+    """Orquestra todo o processo ETL (Extração, Transformação, Carga) para dados da CVM"""
     def __init__(self):
         self.db = DatabaseManager()
         self.processor = DataProcessor()
@@ -203,10 +247,11 @@ class ETLPipeline:
     
     def process_year(self, year: str):
         """Processa um ano específico"""
-        zip_file = f'dfp_cia_aberta_{year}.zip'
+        zip_file = f'dfp_cia_aberta_{year}.zip' # ou itr_cia_aberta_{year}.zip
         
+        # Verifica se o arquivo ZIP existe no diretório atual
         if not os.path.exists(zip_file):
-            logger.warning(f"Arquivo {zip_file} não encontrado")
+            logger.warning(f"Arquivo {zip_file} não encontrado. Certifique-se de que os ZIPs da CVM estão no diretório raiz do projeto.")
             return False
         
         logger.info(f"===> INICIANDO PROCESSAMENTO {year} <===")
@@ -216,7 +261,7 @@ class ETLPipeline:
             # Extração
             raw_df = self.loader.load_from_zip(zip_file, year)
             if raw_df is None or raw_df.empty:
-                logger.error(f"Nenhum dado válido encontrado para {year}")
+                logger.error(f"Nenhum dado válido encontrado para {year} após extração do ZIP.")
                 return False
             
             # Transformação
@@ -230,72 +275,100 @@ class ETLPipeline:
             return True
             
         except Exception as e:
-            logger.error(f"❌ Falha no processamento de {year}: {str(e)}")
+            logger.error(f"❌ Falha no processamento de {year}: {str(e)}", exc_info=True)
             return False
     
     def _insert_data(self, df: pd.DataFrame, year: str):
-        """Estratégia de inserção otimizada"""
+        """Estratégia de inserção otimizada para PostgreSQL"""
         try:
-            # Tentativa com to_sql (mais rápido)
+            # PostgreSQL usa ON CONFLICT (coluna_unica) DO UPDATE SET
+            # Assumimos que a combinação de CNPJ_CIA, DT_REFER, CD_CONTA é única
+            # ou que você quer substituir se já existir.
+            
+            # Para to_sql com PostgreSQL e ON CONFLICT, é mais complexo.
+            # A forma mais simples é usar 'append' e lidar com duplicatas no DB ou antes.
+            # Ou usar execute_with_retry com uma query INSERT ON CONFLICT.
+            
+            # Vamos usar o método 'multi' com 'append' e confiar que o DB lida com chaves primárias/únicas
+            # ou que não haverá duplicatas exatas que causem erro.
+            # Se houver erros de IntegrityError, o _insert_safely será acionado.
+
             df.to_sql(
                 name='financial_data',
-                con=self.db.engine,
+                con=self.db.engine, # Usa a engine do DatabaseManager
                 if_exists='append',
                 index=False,
                 chunksize=Config.CHUNK_SIZE,
                 method='multi'
             )
-            logger.info(f"Inserção em lote concluída para {len(df)} registros")
+            logger.info(f"Inserção em lote concluída para {len(df)} registros do ano {year}.")
             
         except (SQLAlchemyError, IntegrityError) as e:
-            logger.warning(f"Falha na inserção em lote: {str(e)}. Tentando método seguro...")
+            logger.warning(f"Falha na inserção em lote para {year}: {str(e)}. Tentando método seguro (linha por linha)...")
             self._insert_safely(df, year)
     
     def _insert_safely(self, df: pd.DataFrame, year: str):
-        """Inserção linha por linha com tratamento de erros"""
+        """Inserção linha por linha com tratamento de erros para PostgreSQL"""
+        # Converte NaN/NaT para None para compatibilidade com SQL
         data = df.replace({np.nan: None, pd.NaT: None}).to_dict('records')
         total = len(data)
         success = 0
         
+        # PostgreSQL: INSERT INTO ... ON CONFLICT (...) DO UPDATE SET ...
+        # Assumindo que (CNPJ_CIA, DT_REFER, CD_CONTA) é uma chave única ou que você quer atualizar
+        # Se não houver chave única, pode ser apenas um INSERT.
+        # Para este esquema, vamos usar um INSERT simples e logar erros.
+        # Se você adicionar a UNIQUE CONSTRAINT no Supabase, a linha abaixo funcionaria:
+        # ON CONFLICT (cnpj_cia, dt_refer, cd_conta) DO UPDATE SET denom_cia = EXCLUDED.denom_cia, ds_conta = EXCLUDED.ds_conta, vl_conta = EXCLUDED.vl_conta
+        
         query = """
             INSERT INTO financial_data 
-            (CNPJ_CIA, CD_CVM, DENOM_CIA, DT_REFER, CD_CONTA, DS_CONTA, VL_CONTA)
+            (CNPJ_CIA, CD_CVM, DENOM_CIA, DT_REFER, CD_CONTA, DS_CONTA, VL_CONTA, ST_CONTA)
             VALUES 
-            (:CNPJ_CIA, :CD_CVM, :DENOM_CIA, :DT_REFER, :CD_CONTA, :DS_CONTA, :VL_CONTA)
-            ON DUPLICATE KEY UPDATE
-            DENOM_CIA = VALUES(DENOM_CIA),
-            DS_CONTA = VALUES(DS_CONTA),
-            VL_CONTA = VALUES(VL_CONTA)
+            (:CNPJ_CIA, :CD_CVM, :DENOM_CIA, :DT_REFER, :CD_CONTA, :DS_CONTA, :VL_CONTA, :ST_CONTA)
         """
         
         with tqdm(total=total, desc=f"Inserindo {year}") as pbar:
             for row in data:
                 try:
-                    self.db.execute_with_retry(query, row)
+                    # Garante que o ST_CONTA esteja presente, se não, defina um padrão
+                    row_params = {k.lower(): v for k, v in row.items()} # Converte chaves para minúsculas
+                    if 'st_conta' not in row_params:
+                        row_params['st_conta'] = 'D' # Padrão para DFP
+                    
+                    self.db.execute_with_retry(query, row_params)
                     success += 1
+                except IntegrityError as e: # Captura erros de chave duplicada se a constraint for adicionada
+                    logger.warning(f"Registro duplicado ou violação de integridade para {row.get('CNPJ_CIA')} - {row.get('CD_CONTA')} em {row.get('DT_REFER')}. Ignorando: {str(e)}")
                 except Exception as e:
                     logger.warning(f"Falha ao inserir registro: {str(e)}")
                 finally:
                     pbar.update(1)
         
-        logger.info(f"✅ {success}/{total} registros inseridos com sucesso")
+        logger.info(f"✅ {success}/{total} registros inseridos com sucesso para o ano {year}.")
 
 def main():
-    """Ponto de entrada principal"""
+    """Ponto de entrada principal para o ETL de pré-processamento."""
     logger.info("=" * 50)
-    logger.info("INICIANDO PROCESSAMENTO")
+    logger.info("INICIANDO PROCESSAMENTO ETL DE DADOS CVM PARA POSTGRESQL DO RENDER")
     logger.info("=" * 50)
     
     try:
         pipeline = ETLPipeline()
         
+        # Baixar os arquivos ZIP da CVM se não existirem localmente
+        # Esta parte não está implementada aqui, mas seria um passo antes de process_year
+        # Você precisaria de um script para baixar os ZIPs da CVM para a raiz do projeto.
+        
         for year in Config.VALID_YEARS:
-            pipeline.process_year(year)
+            pipeline.process_year(str(year)) # Passa o ano como string
             
     except Exception as e:
-        logger.critical(f"ERRO GLOBAL: {str(e)}", exc_info=True)
+        logger.critical(f"ERRO GLOBAL NO ETL: {str(e)}", exc_info=True)
     finally:
-        logger.info("PROCESSAMENTO CONCLUÍDO")
+        logger.info("PROCESSAMENTO ETL CONCLUÍDO")
 
 if __name__ == "__main__":
+    # Para rodar localmente, certifique-se de ter os arquivos ZIP da CVM na raiz do projeto
+    # e as variáveis de ambiente do DB configuradas (.env file).
     main()
