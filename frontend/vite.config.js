@@ -1,20 +1,24 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import path from 'path' // Importa o módulo 'path' do Node.js
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  // Define a pasta raiz do projeto frontend.
+  // Isso ajuda a resolver caminhos corretamente durante o build.
+  root: '.', 
   build: {
-    outDir: 'dist', // Onde os arquivos de build ser�o gerados
+    // Define a pasta de saída para 'dist', que o Flask espera.
+    outDir: 'dist',
+    // Limpa a pasta 'dist' antes de cada build para evitar arquivos antigos.
+    emptyOutDir: true,
   },
-  server: {
-    proxy: {
-      // Proxy para redirecionar chamadas de API para o backend Flask
-      '/api': {
-        target: 'http://localhost:8080', // Endere�o do seu backend Flask em desenvolvimento (porta 8080 conforme flask_app.py)
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '/api'), // Garante que o path /api seja mantido
-      },
+  resolve: {
+    alias: {
+      // Cria um atalho '@' que aponta diretamente para a pasta 'src'.
+      // Isso é útil para imports dentro dos seus componentes React (ex: import Component from '@/components/ui/button').
+      '@': path.resolve(__dirname, './src'),
     },
   },
-});
+})
