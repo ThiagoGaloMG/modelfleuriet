@@ -9,6 +9,7 @@ import numpy as np
 import logging
 from datetime import datetime, timedelta
 import traceback
+import sys
 
 # Configura logging para a aplicação Flask
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
