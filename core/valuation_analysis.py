@@ -29,7 +29,7 @@ VALUATION_CONFIG = {
     "EMPRESAS_EXCLUIDAS": ['ITUB4', 'BBDC4', 'BBAS3', 'SANB11', 'B3SA3']
 }
 
-# --- Funções de Lógica de Negócio e Cálculos ---
+# --- Funções de Lógica de Negócio e Cálculos (NÃO MODIFICADAS) ---
 
 @lru_cache(maxsize=1)
 def obter_dados_mercado() -> Dict[str, Any]:
@@ -159,50 +159,55 @@ def processar_valuation_empresa(ticker_sa: str, df_empresa: pd.DataFrame, market
             'Capital_Empregado': capital_empregado, 'NOPAT': nopat_recente
         }
     except Exception as e:
-        logger.error(f"Erro ao processar valuation para {ticker_sa}: {e}", exc_info=True)
+        logger.error(f"Erro ao processar valuation para {ticker_sa}: {e}", exc_info=False) # exc_info=False para não poluir os logs
         return None
 
-def run_full_valuation_analysis(df_full_data: pd.DataFrame, ticker_map: pd.DataFrame) -> List[Dict[str, Any]]:
+# ##########################################################################
+# FUNÇÃO ATUALIZADA PARA PROCESSAR UMA EMPRESA DE CADA VEZ
+# ##########################################################################
+def run_full_valuation_analysis(df_empresa_unica: pd.DataFrame, ticker_map: pd.DataFrame) -> List[Dict[str, Any]]:
     """
-    Função principal que orquestra a análise de valuation para todas as empresas.
+    Orquestra a análise de valuation para UMA ÚNICA empresa.
+    Esta função foi adaptada para a nova lógica de baixo consumo de memória,
+    onde o loop principal é feito no flask_app.py.
     """
-    logger.info(">>>>>> INICIANDO ANÁLISE DE VALUATION PARA TODAS AS EMPRESAS <<<<<<")
-    
+    # 1. Validação inicial: se o DataFrame da empresa estiver vazio, não há o que fazer.
+    if df_empresa_unica.empty:
+        return []
+
+    # 2. Obtém o código CVM do DataFrame recebido. Como todos os dados são da mesma empresa,
+    #    podemos pegar o valor da primeira linha.
+    codigo_cvm = df_empresa_unica['CD_CVM'].iloc[0]
+
+    # 3. Usa o mapa de tickers para encontrar o ticker correspondente ao CVM.
+    ticker_info = ticker_map[ticker_map['CD_CVM'] == codigo_cvm]
+    if ticker_info.empty:
+        logger.warning(f"Ticker não encontrado para o CVM {codigo_cvm}. Pulando análise.")
+        return []
+    ticker = ticker_info['TICKER'].iloc[0]
+
+    # 4. Pula a análise para empresas financeiras ou outras exceções definidas.
+    if ticker in VALUATION_CONFIG["EMPRESAS_EXCLUIDAS"]:
+        return []
+
+    # 5. Obtém dados de mercado (taxa SELIC, IBOV). A função usa cache para não refazer o download a cada chamada.
     market_data = obter_dados_mercado()
     
-    resultados_brutos = []
+    # 6. Chama a função de processamento que faz os cálculos pesados para esta única empresa.
+    resultado = processar_valuation_empresa(f"{ticker.upper()}.SA", df_empresa_unica, market_data)
     
-    # Itera sobre o mapa de tickers, que já contém CD_CVM e Ticker
-    for _, row in ticker_map.drop_duplicates(subset=['TICKER']).iterrows():
-        ticker = row['TICKER']
-        codigo_cvm = row['CD_CVM']
-        
-        if ticker in VALUATION_CONFIG["EMPRESAS_EXCLUIDAS"]:
-            continue
-        
-        # Filtra o DataFrame completo para a empresa atual
-        df_empresa_atual = df_full_data[df_full_data["CD_CVM"] == codigo_cvm].copy()
-        
-        if df_empresa_atual.empty:
-            continue
+    # 7. Se não houver resultado, retorna uma lista vazia.
+    if not resultado:
+        return []
 
-        resultado = processar_valuation_empresa(f"{ticker.upper()}.SA", df_empresa_atual, market_data)
-        if resultado:
-            resultados_brutos.append(resultado)
+    # 8. Aplica um filtro de sanidade para remover resultados com valores extremos (ex: WACC muito alto/baixo).
+    wacc_ok = 0.01 < resultado.get('WACC', 1) < 0.40
+    upside_ok = -0.99 < resultado.get('Upside', 0) < 10.0
     
-    # Aplica o filtro de sanidade
-    resultados_filtrados = []
-    for r in resultados_brutos:
-        if r is None: continue
-        wacc_ok = 0.01 < r.get('WACC', 1) < 0.40
-        upside_ok = -0.99 < r.get('Upside', 0) < 10.0
-        if wacc_ok and upside_ok:
-            resultados_filtrados.append(r)
-        else:
-            logger.warning(f"Filtrando empresa {r['Ticker']} por resultados extremos: WACC={r.get('WACC', 'N/A'):.2%}, Upside={r.get('Upside', 'N/A'):.2%}")
-
-    total_calculado = len(resultados_brutos)
-    total_filtrado = len(resultados_filtrados)
-    logger.info(f">>>>>> ANÁLISE DE VALUATION CONCLUÍDA: {total_filtrado} de {total_calculado} empresas passaram no filtro. <<<<<<")
-    
-    return resultados_filtrados
+    if wacc_ok and upside_ok:
+        # Se passar no filtro, retorna o resultado dentro de uma lista.
+        return [resultado]
+    else:
+        logger.warning(f"Filtrando empresa {resultado['Ticker']} por resultados extremos: WACC={resultado.get('WACC', 'N/A'):.2%}, Upside={resultado.get('Upside', 'N/A'):.2%}")
+        # Se não passar, retorna uma lista vazia.
+        return []
