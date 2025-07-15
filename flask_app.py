@@ -1,53 +1,80 @@
-# modelfleuriet/flask_app.py
+# ==============================================================================
+# flask_app.py - Servidor Principal da Aplicação de Análise Financeira
+# ==============================================================================
+# Este script inicializa e executa a aplicação Flask, que serve como backend
+# para o frontend em React e expõe as APIs de análise.
+#
+# Arquitetura:
+# 1. Configuração de Paths: Define os caminhos para o projeto, src, e frontend.
+# 2. Inicialização do Flask: Configura o servidor para servir a SPA React.
+# 3. Gerenciamento de Singletons: Garante que o DB e os sistemas de análise
+#    sejam inicializados apenas uma vez.
+# 4. Rota do Frontend: Uma rota "catch-all" para servir o index.html do React.
+# 5. Rotas de API: Endpoints para health check, Modelo Fleuriet e Valuation.
+# 6. Tratamento de Erros: Handlers para erros 404 e 500.
+# ==============================================================================
 
-import pandas as pd
+# --- Imports de Bibliotecas Padrão e de Terceiros ---
+import os
+import sys
 import json
+import logging
+import traceback
+from datetime import datetime
+import numpy as np
+import pandas as pd
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS, cross_origin
-import os
-import numpy as np
-import logging
-from datetime import datetime
-import traceback
-import sys
-from sqlalchemy import text ### CORREÇÃO 1: Importação 'text' que estava faltando
+from sqlalchemy import text
 
-# Configura logging para a aplicação Flask
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# --- Configuração de Logging ---
+# Configuração robusta para garantir que os logs sejam sempre visíveis no Render.
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# Adiciona o diretório 'core' ao sys.path para importar os módulos
-# Esta linha está correta, pois 'core' está dentro de 'src' no deploy
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'core')))
+# --- Configuração de Caminhos (Paths) ---
+# Esta é a parte mais crítica para o deploy no Render.
+# A lógica abaixo assume que o Render executa o script de dentro de um diretório 'src'.
 
-# Importa os módulos da nova estrutura 'core'
-from core.db_manager import SupabaseDB
-from core.ibovespa_analysis_system import IbovespaAnalysisSystem
-from core.analysis import run_multi_year_analysis
-from core.utils import clean_data_for_json
-from core.ibovespa_utils import get_ibovespa_tickers
+# O diretório onde este script (flask_app.py) está localizado. No Render: '/opt/render/project/src'.
+SRC_ROOT = os.path.dirname(os.path.abspath(__file__))
+# O diretório raiz do projeto completo. No Render: '/opt/render/project'.
+PROJECT_ROOT = os.path.abspath(os.path.join(SRC_ROOT, '..'))
+
+# Adiciona o diretório 'core' ao path do Python para que os imports funcionem.
+CORE_PATH = os.path.join(SRC_ROOT, 'core')
+if CORE_PATH not in sys.path:
+    sys.path.insert(0, CORE_PATH)
+
+logger.info(f"Project Root: {PROJECT_ROOT}")
+logger.info(f"Source Root (SRC_ROOT): {SRC_ROOT}")
+logger.info(f"Core Path (added to sys.path): {CORE_PATH}")
+
+# --- Imports dos Módulos do Projeto ---
+# Importados APÓS a configuração do sys.path.
+from db_manager import SupabaseDB
+from ibovespa_analysis_system import IbovespaAnalysisSystem
+from analysis import run_multi_year_analysis
+from utils import clean_data_for_json
+from ibovespa_utils import get_ibovespa_tickers
 
 # --- Inicialização da Aplicação Flask ---
+# Define o caminho para a pasta de build do frontend (React/Vite). O padrão do Vite é 'dist'.
+FRONTEND_BUILD_PATH = os.path.join(PROJECT_ROOT, 'frontend', 'dist')
+logger.info(f"Configurando pasta estática para servir frontend de: {FRONTEND_BUILD_PATH}")
 
-### CORREÇÃO 2: Caminho correto para a pasta estática do frontend
-# Esta lógica assume que a estrutura de pastas no servidor é:
-# /project_root
-# ├── frontend/
-# │   └── dist/  <-- Arquivos do build do React/Vite
-# └── src/
-#     └── flask_app.py
-# O `os.path.dirname(__file__)` aponta para 'src', então '..' sobe um nível para a raiz do projeto.
-# A pasta de build do Vite geralmente é 'dist', não 'build'.
-frontend_build_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist'))
-logger.info(f"Configurando pasta estática para servir frontend de: {frontend_build_path}")
+# Inicializa o Flask com o caminho estático correto.
+app = Flask(__name__, static_folder=FRONTEND_BUILD_PATH)
 
-# Inicializa o Flask com o caminho estático correto e a URL base para os assets.
-app = Flask(__name__, static_folder=frontend_build_path, static_url_path='/')
-
-# Habilita CORS para todas as rotas
+# Habilita CORS para todas as rotas, permitindo requisições do frontend.
 CORS(app)
 
-# Configuração para serialização JSON (para lidar com tipos numpy e pandas)
+# --- Encoder JSON Personalizado ---
+# Lida com tipos de dados do NumPy/Pandas para evitar erros de serialização.
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.integer): return int(obj)
@@ -59,7 +86,8 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 app.json_encoder = CustomJSONEncoder
 
-# --- Inicialização Global de Componentes ---
+# --- Gerenciamento de Instâncias Globais (Singletons) ---
+# Evita reinicializar conexões e classes pesadas a cada requisição.
 db_manager_instance = None
 ibovespa_analysis_system_instance = None
 ticker_mapping_df = None
@@ -68,9 +96,10 @@ def get_db_manager():
     global db_manager_instance
     if db_manager_instance is None:
         logger.info("Inicializando SupabaseDB manager (PostgreSQL) pela primeira vez...")
-        db_manager_instance = SupabaseDB()
         try:
-            db_manager_instance.get_engine()
+            db_manager_instance = SupabaseDB()
+            db_manager_instance.get_engine() # Testa a conexão
+            logger.info("DB Manager inicializado e conexão testada com sucesso.")
         except Exception as e:
             logger.critical(f"Falha crítica na inicialização da conexão com o DB: {e}. A aplicação pode não funcionar.")
             db_manager_instance = None
@@ -79,16 +108,14 @@ def get_db_manager():
 def get_ticker_mapping_df():
     global ticker_mapping_df
     if ticker_mapping_df is None:
-        # O caminho correto deve ser relativo à raiz do projeto, não à pasta 'src'
-        file_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'mapeamento_tickers.csv')
+        file_path = os.path.join(PROJECT_ROOT, 'data', 'mapeamento_tickers.csv')
         logger.info(f"Carregando mapeamento de tickers de {file_path}...")
         try:
-            df_tickers_mapping = pd.read_csv(file_path, sep=',')
-            df_tickers_mapping.columns = [col.strip().upper() for col in df_tickers_mapping.columns]
-            df_tickers_mapping['CD_CVM'] = pd.to_numeric(df_tickers_mapping['CD_CVM'], errors='coerce').dropna().astype(int)
-            df_tickers_mapping = df_tickers_mapping[['CD_CVM', 'TICKER', 'NOME_EMPRESA']].drop_duplicates(subset=['CD_CVM'])
-            ticker_mapping_df = df_tickers_mapping ### CORREÇÃO: Atribuir ao DataFrame global
-            logger.info(f"{len(df_tickers_mapping)} mapeamentos carregados.")
+            df = pd.read_csv(file_path, sep=',')
+            df.columns = [col.strip().upper() for col in df.columns]
+            df['CD_CVM'] = pd.to_numeric(df['CD_CVM'], errors='coerce').dropna().astype(int)
+            ticker_mapping_df = df[['CD_CVM', 'TICKER', 'NOME_EMPRESA']].drop_duplicates(subset=['CD_CVM'])
+            logger.info(f"{len(ticker_mapping_df)} mapeamentos carregados.")
         except Exception as e:
             logger.error(f"Erro ao carregar mapeamento de tickers de '{file_path}': {e}", exc_info=True)
             ticker_mapping_df = pd.DataFrame()
@@ -99,7 +126,7 @@ def get_ibovespa_analysis_system():
     if ibovespa_analysis_system_instance is None:
         db_manager = get_db_manager()
         ticker_map = get_ticker_mapping_df()
-        if db_manager and not ticker_map.empty:
+        if db_manager and ticker_map is not None and not ticker_map.empty:
             logger.info("Inicializando IbovespaAnalysisSystem pela primeira vez...")
             ibovespa_analysis_system_instance = IbovespaAnalysisSystem(db_manager, ticker_map)
             logger.info("IbovespaAnalysisSystem inicializado.")
@@ -107,184 +134,130 @@ def get_ibovespa_analysis_system():
             logger.error("Não foi possível inicializar IbovespaAnalysisSystem: DB Manager ou mapeamento de tickers ausente/vazio.")
     return ibovespa_analysis_system_instance
 
-# Inicialização no startup
+# Inicialização dos componentes no startup da aplicação.
 get_db_manager()
 get_ticker_mapping_df()
 
+# ==============================================================================
+# --- ROTAS DA APLICAÇÃO ---
+# ==============================================================================
 
-# --- Rotas Flask ---
-
-# Rota de health check para o Render
-@app.route('/health')
-@app.route('/api/health')
-@cross_origin()
-def health_check():
-    # (Seu código de health check aqui, sem alterações)
-    try:
-        db_ok = get_db_manager() is not None and get_db_manager().get_engine() is not None
-        ticker_map_ok = not get_ticker_mapping_df().empty
-        system_ok = get_ibovespa_analysis_system() is not None
-        
-        status = {
-            'status': 'healthy',
-            'message': 'API de Análise Financeira está funcionando',
-            'timestamp': datetime.now().isoformat(),
-            'db_connected': db_ok,
-            'ticker_mapping_loaded': ticker_map_ok,
-            'valuation_system_initialized': system_ok,
-        }
-        logger.info("Health check realizado com sucesso.")
-        return jsonify(status), 200
-    except Exception as e:
-        logger.error(f"Erro no health check: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({
-            'status': 'error',
-            'message': f'Erro no health check: {str(e)}',
-            'timestamp': datetime.now().isoformat()
-        }), 500
-
-### CORREÇÃO 3: Rota unificada para servir o frontend (Single Page Application)
+# --- Rota para Servir o Frontend (React SPA) ---
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 @cross_origin()
 def serve_react_app(path):
     """
-    Serve os arquivos estáticos do frontend (build do React/Vite).
-    Se o caminho solicitado corresponder a um arquivo real na pasta de build (ex: /assets/index.js),
-    ele será servido. Caso contrário, para qualquer outra rota (ex: /dashboard, /empresa/PETR4),
-    ele serve o 'index.html' principal, permitindo que o React Router controle a navegação.
+    Serve a Single Page Application (SPA) React.
+    - Se o caminho solicitado (e.g., /assets/index.js) for um arquivo real na pasta de build, ele é servido.
+    - Se for uma rota de navegação (e.g., /dashboard), o index.html é servido para que o React Router assuma.
     """
-    if app.static_folder is None:
-        logger.error("A pasta estática (static_folder) não foi configurada para a aplicação Flask.")
-        return "Erro de configuração do servidor.", 500
+    if app.static_folder:
+        if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+            return send_from_directory(app.static_folder, path)
+        else:
+            return send_from_directory(app.static_folder, 'index.html')
+    logger.error(f"A pasta estática (static_folder) não foi encontrada ou configurada: {app.static_folder}")
+    return "Erro de configuração do servidor: Frontend não encontrado.", 404
 
-    # Verifica se o caminho solicitado corresponde a um arquivo existente
-    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
-        logger.info(f"Servindo arquivo estático: {path}")
-        return send_from_directory(app.static_folder, path)
-    else:
-        # Se não for um arquivo, serve o index.html para o roteador do React
-        logger.info(f"Servindo index.html como fallback para a rota: {path}")
-        return send_from_directory(app.static_folder, 'index.html')
+# --- Rotas de API ---
 
+@app.route('/api/health')
+@cross_origin()
+def health_check():
+    """Verifica a saúde dos componentes principais da aplicação."""
+    try:
+        db_ok = get_db_manager() is not None
+        ticker_map_ok = get_ticker_mapping_df() is not None and not get_ticker_mapping_df().empty
+        system_ok = get_ibovespa_analysis_system() is not None
+        
+        status = {
+            'status': 'healthy' if all([db_ok, ticker_map_ok, system_ok]) else 'degraded',
+            'timestamp': datetime.now().isoformat(),
+            'components': {
+                'database_connection': 'ok' if db_ok else 'error',
+                'ticker_mapping_loaded': 'ok' if ticker_map_ok else 'error',
+                'valuation_system_initialized': 'ok' if system_ok else 'error',
+            }
+        }
+        return jsonify(status), 200
+    except Exception as e:
+        logger.error(f"Erro no health check: {e}", exc_info=True)
+        return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
 
-# --- Rotas para o Modelo Fleuriet (API para o Frontend React) ---
 @app.route('/api/fleuriet/companies', methods=['GET'])
 @cross_origin()
 def get_fleuriet_companies_api():
-    """Retorna a lista de empresas para o dropdown do Modelo Fleuriet."""
+    """Retorna a lista de empresas disponíveis para análise no Modelo Fleuriet."""
     db_manager = get_db_manager()
     ticker_map = get_ticker_mapping_df()
     if not db_manager or ticker_map.empty:
-        logger.error("DB Manager ou mapeamento de tickers não disponível para Fleuriet companies.")
-        return jsonify({"error": "Serviço indisponível. Tente novamente mais tarde."}), 503
-
-    engine = db_manager.get_engine()
-    if not engine:
-        return jsonify({"error": "Conexão com o banco de dados não estabelecida."}), 500
+        return jsonify({"error": "Serviço temporariamente indisponível."}), 503
 
     try:
-        # Busca todas as empresas que têm dados financeiros (CD_CVM) no DB
-        query = text("""
-            SELECT DISTINCT "CD_CVM", "DENOM_CIA"
-            FROM public.financial_data
-            ORDER BY "DENOM_CIA";
-        """)
-        with engine.connect() as connection:
-            # Renomeia as colunas para o merge
+        with db_manager.get_engine().connect() as connection:
+            query = text('SELECT DISTINCT "CD_CVM", "DENOM_CIA" FROM public.financial_data ORDER BY "DENOM_CIA";')
             df_companies_db = pd.read_sql(query, connection)
-            df_companies_db.rename(columns={'DENOM_CIA': 'NOME_EMPRESA'}, inplace=True)
         
-        # Junta com o mapeamento para obter o ticker
-        final_df = pd.merge(df_companies_db, ticker_map, on='CD_CVM', how='left')
-        
-        # Filtra apenas empresas que têm ticker mapeado e garante formato
-        final_df = final_df.dropna(subset=['TICKER'])
+        df_companies_db.rename(columns={'DENOM_CIA': 'NOME_EMPRESA'}, inplace=True)
+        final_df = pd.merge(df_companies_db, ticker_map, on='CD_CVM', how='left').dropna(subset=['TICKER'])
         
         companies_list = [
             {'company_id': str(row['CD_CVM']), 'company_name': row['NOME_EMPRESA_x'], 'ticker': row['TICKER']}
             for _, row in final_df.iterrows()
         ]
-        
-        return jsonify(companies_list), 200
+        return jsonify(companies_list)
     except Exception as e:
         logger.error(f"Erro ao buscar lista de empresas para Fleuriet: {e}", exc_info=True)
-        return jsonify({"error": f"Ocorreu um erro ao carregar empresas: {str(e)}"}), 500
-
+        return jsonify({"error": "Ocorreu um erro ao carregar a lista de empresas."}), 500
 
 @app.route('/api/fleuriet/analyze', methods=['POST'])
 @cross_origin()
 def analyze_fleuriet_api():
-    """Executa a análise do Modelo Fleuriet para a empresa e anos selecionados."""
+    """Executa a análise do Modelo Fleuriet para uma empresa e período específicos."""
     try:
         data = request.get_json()
-        cvm_code_str = data.get('cvm_code')
-        start_year = data.get('start_year')
-        end_year = data.get('end_year')
-
-        if not cvm_code_str or not start_year or not end_year:
-            return jsonify({"error": "Parâmetros cvm_code, start_year e end_year são obrigatórios."}), 400
-
-        cvm_code = int(cvm_code_str)
-        years_to_analyze = list(range(int(start_year), int(end_year) + 1))
+        cvm_code = int(data.get('cvm_code'))
+        start_year = int(data.get('start_year'))
+        end_year = int(data.get('end_year'))
+        years_to_analyze = list(range(start_year, end_year + 1))
 
         db_manager = get_db_manager()
-        if not db_manager:
-            return jsonify({"error": "Conexão com o banco de dados não estabelecida."}), 500
-
-        engine = db_manager.get_engine()
-        if not engine:
-            return jsonify({"error": "Conexão com o banco de dados não estabelecida."}), 500
-        
-        df_company_query = text("""
-            SELECT "CNPJ_CIA", "CD_CVM", "DENOM_CIA", "DT_REFER", "CD_CONTA", "DS_CONTA", "VL_CONTA", "ST_CONTA"
-            FROM public.financial_data
-            WHERE "CD_CVM" = :cvm_code
-            AND EXTRACT(YEAR FROM "DT_REFER") BETWEEN :start_year AND :end_year
-            ORDER BY "DT_REFER" ASC, "ST_CONTA" DESC, "CD_CONTA" ASC;
-        """)
-        with engine.connect() as connection:
-            df_company = pd.read_sql(df_company_query, connection, params={'cvm_code': cvm_code, 'start_year': int(start_year), 'end_year': int(end_year)})
+        with db_manager.get_engine().connect() as connection:
+            query = text("""
+                SELECT "CNPJ_CIA", "CD_CVM", "DENOM_CIA", "DT_REFER", "CD_CONTA", "DS_CONTA", "VL_CONTA", "ST_CONTA"
+                FROM public.financial_data
+                WHERE "CD_CVM" = :cvm_code AND EXTRACT(YEAR FROM "DT_REFER") BETWEEN :start_year AND :end_year
+                ORDER BY "DT_REFER" ASC, "ST_CONTA" DESC, "CD_CONTA" ASC;
+            """)
+            df_company = pd.read_sql(query, connection, params={'cvm_code': cvm_code, 'start_year': start_year, 'end_year': end_year})
 
         if df_company.empty:
-            return jsonify({"error": f"Nenhum dado financeiro encontrado para a empresa CVM {cvm_code} nos anos {start_year}-{end_year}. Por favor, verifique se os dados CVM foram pré-processados para esses anos."}), 404
+            return jsonify({"error": f"Nenhum dado financeiro encontrado para a empresa CVM {cvm_code} no período."}), 404
         
         fleuriet_results, fleuriet_error = run_multi_year_analysis(df_company, cvm_code, years_to_analyze)
-
         if fleuriet_error:
             return jsonify({"error": fleuriet_error}), 500
 
-        cleaned_results = clean_data_for_json(fleuriet_results)
-
-        return jsonify(cleaned_results), 200
-
+        return jsonify(clean_data_for_json(fleuriet_results))
+    except (ValueError, TypeError) as e:
+        return jsonify({"error": f"Parâmetros inválidos: {e}"}), 400
     except Exception as e:
         logger.error(f"Erro na análise Fleuriet via API: {e}", exc_info=True)
-        return jsonify({"error": f"Ocorreu um erro inesperado na análise Fleuriet: {str(e)}"}), 500
+        return jsonify({"error": "Ocorreu um erro inesperado na análise."}), 500
 
-
-# --- Rotas para o Valuation (API para o Frontend React) ---
 @app.route('/api/financial/analyze/complete', methods=['POST'])
 @cross_origin()
 def run_complete_analysis_api():
-    """
-    Executa a análise completa do Ibovespa ou para um número limitado de empresas.
-    """
+    """Executa a análise de valuation completa para todas as empresas do Ibovespa."""
     try:
-        logger.info("Iniciando análise completa do Ibovespa via API")
+        logger.info("Iniciando análise completa de valuation via API")
         system = get_ibovespa_analysis_system()
-        
-        data = request.get_json(silent=True)
-        num_companies = None
-        if data and 'num_companies' in data:
-            try:
-                num_companies = int(data['num_companies'])
-                if num_companies <= 0:
-                    num_companies = None
-                logger.info(f"Requisição para análise rápida de {num_companies} empresas.")
-            except (ValueError, TypeError):
-                logger.warning("Valor inválido para 'num_companies'. Analisando todas as empresas.")
-                num_companies = None
+        if not system:
+            return jsonify({"error": "Sistema de análise não inicializado."}), 503
+
+        data = request.get_json(silent=True) or {}
+        num_companies = data.get('num_companies')
         
         start_time = datetime.now()
         report = system.run_complete_analysis(num_companies=num_companies)
@@ -292,108 +265,79 @@ def run_complete_analysis_api():
         
         report['execution_time_seconds'] = (end_time - start_time).total_seconds()
         
-        return jsonify(report), 200
-        
+        return jsonify(report)
     except Exception as e:
-        logger.error(f"Erro ao executar análise completa: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({
-            'status': 'error',
-            'message': 'Erro interno do servidor ao executar análise completa',
-            'error_details': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
+        logger.error(f"Erro ao executar análise completa: {e}", exc_info=True)
+        return jsonify({'error': f"Erro interno: {e}"}), 500
 
 @app.route('/api/financial/analyze/company/<ticker>', methods=['GET'])
 @cross_origin()
 def get_company_analysis_api(ticker):
-    """
-    Obtém dados de análise detalhados para uma empresa específica.
-    """
+    """Obtém os dados de análise de valuation para uma empresa específica."""
     try:
-        logger.info(f"Iniciando análise para empresa específica: {ticker}")
+        logger.info(f"Buscando análise para o ticker: {ticker}")
         system = get_ibovespa_analysis_system()
-        analysis_result = system.get_company_analysis(ticker)
-        
-        return jsonify(analysis_result), 200
-        
+        if not system:
+            return jsonify({"error": "Sistema de análise não inicializado."}), 503
+            
+        analysis_result = system.get_company_analysis(ticker.upper())
+        if not analysis_result or analysis_result.get('error'):
+             return jsonify(analysis_result or {"error": "Análise não encontrada para o ticker."}), 404
+             
+        return jsonify(analysis_result)
     except Exception as e:
-        logger.error(f"Erro ao obter dados para {ticker}: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({
-            'status': 'error',
-            'message': f'Erro interno do servidor ao obter dados para {ticker}',
-            'error_details': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
+        logger.error(f"Erro ao obter dados para {ticker}: {e}", exc_info=True)
+        return jsonify({'error': f"Erro interno ao buscar dados para {ticker}."}), 500
 
 @app.route('/api/financial/companies', methods=['GET'])
 @cross_origin()
 def get_ibovespa_companies_list_api():
-    """
-    Obtém a lista de todas as empresas do Ibovespa conhecidas pelo sistema de Valuation.
-    """
+    """Obtém a lista de empresas do Ibovespa disponíveis para valuation."""
     try:
-        logger.info("Obtendo lista de empresas do Ibovespa para Valuation.")
         system = get_ibovespa_analysis_system()
+        if not system:
+            return jsonify({"error": "Sistema de análise não inicializado."}), 503
+            
         companies = system.get_ibovespa_company_list()
-        
-        result = {
-            'companies': companies,
-            'total': len(companies),
-            'timestamp': datetime.now().isoformat(),
-            'api_version': '1.0'
-        }
-        
-        logger.info(f"Lista de empresas retornada: {len(companies)} empresas.")
-        return jsonify(result), 200
-        
+        return jsonify({'companies': companies, 'total': len(companies)})
     except Exception as e:
-        logger.error(f"Erro ao obter lista de empresas do Ibovespa: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({
-            'error': 'Erro interno do servidor ao obter lista de empresas',
-            'message': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
+        logger.error(f"Erro ao obter lista de empresas do Ibovespa: {e}", exc_info=True)
+        return jsonify({'error': "Erro interno ao obter lista de empresas."}), 500
 
-# --- Rotas para o Worker de Valuation ---
 @app.route('/api/valuation/run_worker', methods=['POST'])
 @cross_origin()
 def run_valuation_worker_api():
-    """
-    Aciona o worker de valuation para recalcular e persistir os dados de valuation.
-    """
+    """Aciona o worker para recalcular todos os dados de valuation."""
     try:
         logger.info("Requisição para executar worker de valuation recebida.")
         system = get_ibovespa_analysis_system()
-        
         if not system:
-            return jsonify({"success": False, "error": "Sistema de análise de Valuation não inicializado."}), 500
+            return jsonify({"success": False, "error": "Sistema de análise não inicializado."}), 503
 
+        # Idealmente, isso seria assíncrono (com Celery, etc.), mas para o Render funciona.
         system.run_complete_analysis(num_companies=None, force_recollect=True)
-
-        logger.info("Worker de valuation acionado com sucesso.")
-        return jsonify({"success": True, "message": "Worker de valuation acionado. Os dados serão atualizados em breve."}), 200
+        logger.info("Worker de valuation executado com sucesso.")
+        return jsonify({"success": True, "message": "Worker de valuation concluído. Os dados foram atualizados."})
     except Exception as e:
         logger.error(f"Erro ao acionar worker de valuation: {e}", exc_info=True)
-        return jsonify({"success": False, "error": f"Falha ao acionar worker: {str(e)}"}), 500
+        return jsonify({"success": False, "error": f"Falha ao executar worker: {e}"}), 500
 
-# --- Rotas de Erro ---
+# --- Tratamento de Erros Globais ---
 @app.errorhandler(404)
-def page_not_found(e):
-    # Para uma SPA, qualquer rota não encontrada na API deve retornar o index.html
-    # A rota serve_react_app já lida com isso.
-    return serve_react_app(path="")
+def page_not_found_handler(e):
+    """Garante que qualquer rota não-API seja redirecionada para o React."""
+    if not request.path.startswith('/api/'):
+        return serve_react_app(path='')
+    return jsonify(error=f"Endpoint da API não encontrado: {request.path}"), 404
 
 @app.errorhandler(500)
-def internal_server_error(e):
-    # Loga o erro completo para depuração
+def internal_server_error_handler(e):
     original_exception = getattr(e, "original_exception", e)
     logger.error(f"Erro 500: {original_exception}", exc_info=True)
-    # Retorna uma resposta JSON padronizada para o cliente
     return jsonify({"error": "Ocorreu um erro interno no servidor."}), 500
 
-
+# --- Ponto de Entrada da Aplicação ---
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
-    logger.info(f"Iniciando a aplicação Flask na porta {port}...")
-    # O debug deve ser desativado em produção
+    # O debug deve ser sempre False em produção.
     app.run(host='0.0.0.0', port=port, debug=False)
