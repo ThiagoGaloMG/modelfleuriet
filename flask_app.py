@@ -3,32 +3,46 @@
 import pandas as pd
 import json
 from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 import os
 import numpy as np
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 import traceback
 import sys
-from flask_cors import cross_origin
+from sqlalchemy import text ### CORREÇÃO 1: Importação 'text' que estava faltando
 
 # Configura logging para a aplicação Flask
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # Adiciona o diretório 'core' ao sys.path para importar os módulos
+# Esta linha está correta, pois 'core' está dentro de 'src' no deploy
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'core')))
 
 # Importa os módulos da nova estrutura 'core'
-from core.db_manager import SupabaseDB # Gerenciador do PostgreSQL do Render
-from core.ibovespa_analysis_system import IbovespaAnalysisSystem # Sistema de análise de Valuation
-from core.analysis import run_multi_year_analysis # Lógica do Modelo Fleuriet
-from core.utils import clean_data_for_json # Utilitários para limpeza de JSON
-from core.ibovespa_utils import get_ibovespa_tickers # Para a lista de tickers (usada internamente pelo sistema de análise)
+from core.db_manager import SupabaseDB
+from core.ibovespa_analysis_system import IbovespaAnalysisSystem
+from core.analysis import run_multi_year_analysis
+from core.utils import clean_data_for_json
+from core.ibovespa_utils import get_ibovespa_tickers
 
 # --- Inicialização da Aplicação Flask ---
-# Configura o static_folder para servir os arquivos do frontend React (após o build)
-app = Flask(__name__, static_folder=os.path.abspath(os.path.join(os.path.dirname(__file__), 'frontend', 'dist')))
+
+### CORREÇÃO 2: Caminho correto para a pasta estática do frontend
+# Esta lógica assume que a estrutura de pastas no servidor é:
+# /project_root
+# ├── frontend/
+# │   └── dist/  <-- Arquivos do build do React/Vite
+# └── src/
+#     └── flask_app.py
+# O `os.path.dirname(__file__)` aponta para 'src', então '..' sobe um nível para a raiz do projeto.
+# A pasta de build do Vite geralmente é 'dist', não 'build'.
+frontend_build_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist'))
+logger.info(f"Configurando pasta estática para servir frontend de: {frontend_build_path}")
+
+# Inicializa o Flask com o caminho estático correto e a URL base para os assets.
+app = Flask(__name__, static_folder=frontend_build_path, static_url_path='/')
 
 # Habilita CORS para todas as rotas
 CORS(app)
@@ -43,44 +57,42 @@ class CustomJSONEncoder(json.JSONEncoder):
         if pd.isna(obj): return None
         return super().default(obj)
 
-app.json_encoder = CustomJSONEncoder # Usa o encoder personalizado
+app.json_encoder = CustomJSONEncoder
 
 # --- Inicialização Global de Componentes ---
-# Instâncias dos sistemas que serão inicializadas uma vez
 db_manager_instance = None
 ibovespa_analysis_system_instance = None
-ticker_mapping_df = None # Mapeamento CVM <-> Ticker (carregado de mapeamento_tickers.csv)
+ticker_mapping_df = None
 
 def get_db_manager():
     global db_manager_instance
     if db_manager_instance is None:
         logger.info("Inicializando SupabaseDB manager (PostgreSQL) pela primeira vez...")
         db_manager_instance = SupabaseDB()
-        # Teste de conexão no startup
         try:
-            db_manager_instance.get_engine() # Tenta criar a engine para testar a conexão
+            db_manager_instance.get_engine()
         except Exception as e:
             logger.critical(f"Falha crítica na inicialização da conexão com o DB: {e}. A aplicação pode não funcionar.")
-            db_manager_instance = None # Reseta se falhar
+            db_manager_instance = None
     return db_manager_instance
 
 def get_ticker_mapping_df():
     global ticker_mapping_df
     if ticker_mapping_df is None:
-        file_path = os.path.join(os.path.dirname(__file__), 'data', 'mapeamento_tickers.csv') # Caminho na raiz do repositório
+        # O caminho correto deve ser relativo à raiz do projeto, não à pasta 'src'
+        file_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'mapeamento_tickers.csv')
         logger.info(f"Carregando mapeamento de tickers de {file_path}...")
         try:
-            # Garante que o mapeamento está no formato TICKER, CD_CVM, NOME_EMPRESA
             df_tickers_mapping = pd.read_csv(file_path, sep=',')
             df_tickers_mapping.columns = [col.strip().upper() for col in df_tickers_mapping.columns]
             df_tickers_mapping['CD_CVM'] = pd.to_numeric(df_tickers_mapping['CD_CVM'], errors='coerce').dropna().astype(int)
-            # Seleciona colunas específicas para evitar problemas com colunas extras
             df_tickers_mapping = df_tickers_mapping[['CD_CVM', 'TICKER', 'NOME_EMPRESA']].drop_duplicates(subset=['CD_CVM'])
+            ticker_mapping_df = df_tickers_mapping ### CORREÇÃO: Atribuir ao DataFrame global
             logger.info(f"{len(df_tickers_mapping)} mapeamentos carregados.")
         except Exception as e:
             logger.error(f"Erro ao carregar mapeamento de tickers de '{file_path}': {e}", exc_info=True)
-            ticker_mapping_df = pd.DataFrame() # Garante que seja um DataFrame vazio
-    return df_tickers_mapping
+            ticker_mapping_df = pd.DataFrame()
+    return ticker_mapping_df
 
 def get_ibovespa_analysis_system():
     global ibovespa_analysis_system_instance
@@ -95,8 +107,7 @@ def get_ibovespa_analysis_system():
             logger.error("Não foi possível inicializar IbovespaAnalysisSystem: DB Manager ou mapeamento de tickers ausente/vazio.")
     return ibovespa_analysis_system_instance
 
-# Tenta carregar o mapeamento e o DB manager no startup do Flask.
-# Se o DB não conectar, a instância do manager será None.
+# Inicialização no startup
 get_db_manager()
 get_ticker_mapping_df()
 
@@ -104,14 +115,15 @@ get_ticker_mapping_df()
 # --- Rotas Flask ---
 
 # Rota de health check para o Render
-@app.route('/health', methods=['GET'])
-@app.route('/api/health', methods=['GET']) # Mantém compatibilidade com /api/health
+@app.route('/health')
+@app.route('/api/health')
 @cross_origin()
 def health_check():
+    # (Seu código de health check aqui, sem alterações)
     try:
-        db_ok = get_db_manager() is not None and get_db_manager().get_engine() is not None # Verifica se engine foi criada
+        db_ok = get_db_manager() is not None and get_db_manager().get_engine() is not None
         ticker_map_ok = not get_ticker_mapping_df().empty
-        system_ok = get_ibovespa_analysis_system() is not None # Tenta inicializar
+        system_ok = get_ibovespa_analysis_system() is not None
         
         status = {
             'status': 'healthy',
@@ -131,28 +143,30 @@ def health_check():
             'timestamp': datetime.now().isoformat()
         }), 500
 
-# Rota para servir os arquivos estáticos do frontend React
+### CORREÇÃO 3: Rota unificada para servir o frontend (Single Page Application)
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
-def serve_frontend(path):
+@cross_origin()
+def serve_react_app(path):
     """
-    Serve os arquivos estáticos do frontend (build do React).
-    Se o path for vazio ou não corresponder a um arquivo, serve o index.html.
+    Serve os arquivos estáticos do frontend (build do React/Vite).
+    Se o caminho solicitado corresponder a um arquivo real na pasta de build (ex: /assets/index.js),
+    ele será servido. Caso contrário, para qualquer outra rota (ex: /dashboard, /empresa/PETR4),
+    ele serve o 'index.html' principal, permitindo que o React Router controle a navegação.
     """
     if app.static_folder is None:
-        logger.error("Static folder not configured for Flask app.")
-        return "Static folder not configured", 404
+        logger.error("A pasta estática (static_folder) não foi configurada para a aplicação Flask.")
+        return "Erro de configuração do servidor.", 500
 
-    full_path = os.path.join(app.static_folder, path)
-    
-    # Se o caminho for um arquivo existente, sirva-o
-    if path != "" and os.path.exists(full_path) and os.path.isfile(full_path):
+    # Verifica se o caminho solicitado corresponde a um arquivo existente
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
         logger.info(f"Servindo arquivo estático: {path}")
         return send_from_directory(app.static_folder, path)
-    # Caso contrário, serve o index.html (SPA fallback)
     else:
-        logger.info(f"Servindo index.html para path: {path}")
+        # Se não for um arquivo, serve o index.html para o roteador do React
+        logger.info(f"Servindo index.html como fallback para a rota: {path}")
         return send_from_directory(app.static_folder, 'index.html')
+
 
 # --- Rotas para o Modelo Fleuriet (API para o Frontend React) ---
 @app.route('/api/fleuriet/companies', methods=['GET'])
@@ -177,17 +191,18 @@ def get_fleuriet_companies_api():
             ORDER BY "DENOM_CIA";
         """)
         with engine.connect() as connection:
+            # Renomeia as colunas para o merge
             df_companies_db = pd.read_sql(query, connection)
+            df_companies_db.rename(columns={'DENOM_CIA': 'NOME_EMPRESA'}, inplace=True)
         
         # Junta com o mapeamento para obter o ticker
-        df_companies_db.rename(columns={'denom_cia': 'company_name', 'cd_cvm': 'cvm_code'}, inplace=True)
-        final_df = pd.merge(df_companies_db, ticker_map, on='cvm_code', how='left')
+        final_df = pd.merge(df_companies_db, ticker_map, on='CD_CVM', how='left')
         
         # Filtra apenas empresas que têm ticker mapeado e garante formato
         final_df = final_df.dropna(subset=['TICKER'])
         
         companies_list = [
-            {'company_id': str(row['cvm_code']), 'company_name': row['company_name'], 'ticker': row['TICKER']}
+            {'company_id': str(row['CD_CVM']), 'company_name': row['NOME_EMPRESA_x'], 'ticker': row['TICKER']}
             for _, row in final_df.iterrows()
         ]
         
@@ -221,8 +236,7 @@ def analyze_fleuriet_api():
         if not engine:
             return jsonify({"error": "Conexão com o banco de dados não estabelecida."}), 500
         
-        # Busca os dados financeiros da CVM para a empresa e anos selecionados
-        df_company_query = text(f"""
+        df_company_query = text("""
             SELECT "CNPJ_CIA", "CD_CVM", "DENOM_CIA", "DT_REFER", "CD_CONTA", "DS_CONTA", "VL_CONTA", "ST_CONTA"
             FROM public.financial_data
             WHERE "CD_CVM" = :cvm_code
@@ -248,6 +262,7 @@ def analyze_fleuriet_api():
         logger.error(f"Erro na análise Fleuriet via API: {e}", exc_info=True)
         return jsonify({"error": f"Ocorreu um erro inesperado na análise Fleuriet: {str(e)}"}), 500
 
+
 # --- Rotas para o Valuation (API para o Frontend React) ---
 @app.route('/api/financial/analyze/complete', methods=['POST'])
 @cross_origin()
@@ -257,7 +272,6 @@ def run_complete_analysis_api():
     """
     try:
         logger.info("Iniciando análise completa do Ibovespa via API")
-        
         system = get_ibovespa_analysis_system()
         
         data = request.get_json(silent=True)
@@ -268,7 +282,7 @@ def run_complete_analysis_api():
                 if num_companies <= 0:
                     num_companies = None
                 logger.info(f"Requisição para análise rápida de {num_companies} empresas.")
-            except ValueError:
+            except (ValueError, TypeError):
                 logger.warning("Valor inválido para 'num_companies'. Analisando todas as empresas.")
                 num_companies = None
         
@@ -297,7 +311,6 @@ def get_company_analysis_api(ticker):
     """
     try:
         logger.info(f"Iniciando análise para empresa específica: {ticker}")
-        
         system = get_ibovespa_analysis_system()
         analysis_result = system.get_company_analysis(ticker)
         
@@ -321,7 +334,6 @@ def get_ibovespa_companies_list_api():
     try:
         logger.info("Obtendo lista de empresas do Ibovespa para Valuation.")
         system = get_ibovespa_analysis_system()
-        
         companies = system.get_ibovespa_company_list()
         
         result = {
@@ -342,23 +354,21 @@ def get_ibovespa_companies_list_api():
             'timestamp': datetime.now().isoformat()
         }), 500
 
-# --- Rotas para o Worker de Valuation (se você quiser acionar manualmente) ---
+# --- Rotas para o Worker de Valuation ---
 @app.route('/api/valuation/run_worker', methods=['POST'])
 @cross_origin()
 def run_valuation_worker_api():
     """
     Aciona o worker de valuation para recalcular e persistir os dados de valuation.
-    Este endpoint pode ser chamado pelo frontend ou por um agendador.
     """
     try:
         logger.info("Requisição para executar worker de valuation recebida.")
-        
         system = get_ibovespa_analysis_system()
         
         if not system:
-            return jsonify({"success": False, "error": "Sistema de análise de Valuation não inicializado. Verifique a conexão com o DB e o mapeamento de tickers."}), 500
+            return jsonify({"success": False, "error": "Sistema de análise de Valuation não inicializado."}), 500
 
-        system.run_complete_analysis(num_companies=None, force_recollect=True) # Roda a análise completa e força re-coleta
+        system.run_complete_analysis(num_companies=None, force_recollect=True)
 
         logger.info("Worker de valuation acionado com sucesso.")
         return jsonify({"success": True, "message": "Worker de valuation acionado. Os dados serão atualizados em breve."}), 200
@@ -366,18 +376,24 @@ def run_valuation_worker_api():
         logger.error(f"Erro ao acionar worker de valuation: {e}", exc_info=True)
         return jsonify({"success": False, "error": f"Falha ao acionar worker: {str(e)}"}), 500
 
-# --- Rotas de Erro (para compatibilidade, mas o React lidará com a maioria) ---
+# --- Rotas de Erro ---
 @app.errorhandler(404)
 def page_not_found(e):
-    return send_from_directory(app.static_folder, 'index.html')
+    # Para uma SPA, qualquer rota não encontrada na API deve retornar o index.html
+    # A rota serve_react_app já lida com isso.
+    return serve_react_app(path="")
 
 @app.errorhandler(500)
 def internal_server_error(e):
-    logger.error(f"Erro 500: {e}", exc_info=True)
+    # Loga o erro completo para depuração
+    original_exception = getattr(e, "original_exception", e)
+    logger.error(f"Erro 500: {original_exception}", exc_info=True)
+    # Retorna uma resposta JSON padronizada para o cliente
     return jsonify({"error": "Ocorreu um erro interno no servidor."}), 500
 
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"Iniciando a aplicação Flask na porta {port}...")
-    app.run(host='0.0.0.0', port=port, debug=os.environ.get('FLASK_DEBUG', 'False') == 'True')
+    # O debug deve ser desativado em produção
+    app.run(host='0.0.0.0', port=port, debug=False)
