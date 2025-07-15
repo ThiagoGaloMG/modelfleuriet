@@ -1,4 +1,4 @@
-﻿import pandas as pd
+import pandas as pd
 from typing import Dict, Tuple, List, Optional
 import numpy as np
 import logging
@@ -49,10 +49,11 @@ UNIFIED_ACCOUNT_MAPPING = {
 
 def reclassify_and_sum(df: pd.DataFrame) -> Dict[str, float]:
     """Reclassifica as contas e soma os valores por categoria usando o mapeamento unificado."""
-    df['CATEGORY'] = df['CD_CONTA'].astype(str).str.strip().apply(
+    # ## CORREÇÃO ##: Nomes das colunas em minúsculo ('CD_CONTA' -> 'cd_conta', 'VL_CONTA' -> 'vl_conta')
+    df['CATEGORY'] = df['cd_conta'].astype(str).str.strip().apply(
         lambda x: UNIFIED_ACCOUNT_MAPPING.get(x, 'Outros')
     )
-    summed_data = df.groupby('CATEGORY')['VL_CONTA'].sum().to_dict()
+    summed_data = df.groupby('CATEGORY')['vl_conta'].sum().to_dict()
     return summed_data
 
 def calculate_fleuriet_indicators(reclassified_data: Dict) -> Tuple[Dict, str]:
@@ -64,18 +65,18 @@ def calculate_fleuriet_indicators(reclassified_data: Dict) -> Tuple[Dict, str]:
     pc_fornecedores = reclassified_data.get('PC_Fornecedores', 0.0)
     pc_outros = reclassified_data.get('PC_Outros', 0.0)
 
-    # NCG (Necessidade de Capital de Giro) = Ativos Cíclicos Operacionais - Passivos Cíclicos Operacionais
+    # NCG (Necessidade de Capital de Giro)
     ativos_ciclicos = ac_clientes + ac_estoques + ac_outros
     passivos_ciclicos = pc_fornecedores + pc_outros
     NCG = ativos_ciclicos - passivos_ciclicos
     
-    # CDG (Capital de Giro) = Recursos de Longo Prazo - Ativos de Longo Prazo
+    # CDG (Capital de Giro)
     pl = reclassified_data.get('PL', 0.0)
     pnc = reclassified_data.get('PNC_Total', 0.0)
     anc = reclassified_data.get('ANC', 0.0)
     CDG = (pl + pnc) - anc
     
-    # T (Tesouraria) = Saldo entre CDG e NCG
+    # T (Tesouraria)
     T = CDG - NCG
     
     # Classificação da estrutura financeira
@@ -93,11 +94,9 @@ def calculate_fleuriet_indicators(reclassified_data: Dict) -> Tuple[Dict, str]:
 
 def calculate_advanced_indicators(reclassified_data: Dict, base_indicators: Dict) -> Dict:
     """Calcula indicadores avançados como prazos médios e ROIC de forma segura."""
-    # Extração de valores
     vendas = reclassified_data.get('DRE_Receita')
     custo = reclassified_data.get('DRE_Custo')
     lucro_op = reclassified_data.get('DRE_LucroOperacional')
-    imposto_renda = reclassified_data.get('DRE_ImpostoRendaCSLL')
     ac_clientes = reclassified_data.get('AC_Clientes')
     ac_estoques = reclassified_data.get('AC_Estoques')
     pc_fornecedores = reclassified_data.get('PC_Fornecedores')
@@ -106,7 +105,6 @@ def calculate_advanced_indicators(reclassified_data: Dict, base_indicators: Dict
     anc = reclassified_data.get('ANC')
     ncg = base_indicators.get('NCG')
 
-    # Cálculo dos Prazos
     compras = custo + ac_estoques if all(v is not None for v in [custo, ac_estoques]) else None
     ratio_pmr = safe_divide(ac_clientes, vendas)
     pmr = ratio_pmr * 365 if ratio_pmr is not None else None
@@ -115,15 +113,11 @@ def calculate_advanced_indicators(reclassified_data: Dict, base_indicators: Dict
     ratio_pmp = safe_divide(pc_fornecedores, compras)
     pmp = ratio_pmp * 365 if ratio_pmp is not None else None
     
-    # Ciclo Financeiro
     ciclo_financeiro = None
     if all(p is not None for p in [pmr, pme, pmp]):
         ciclo_financeiro = pmr + pme - pmp
-           
-    # ILD (Índice de Liquidez Dinâmica)
+            
     ild = safe_divide(t, (anc + ncg)) if all(v is not None for v in [t, anc, ncg]) else None
-
-    # ROIC (Retorno sobre Capital Investido) - Simplificado
     roic = safe_divide(lucro_op, ativo_total)
     roic_percent = roic * 100 if roic is not None else None
 
@@ -135,7 +129,6 @@ def calculate_advanced_indicators(reclassified_data: Dict, base_indicators: Dict
 
 def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> Tuple[Optional[float], str]:
     """Calcula o Z-Score de Prado para predição de insolvência."""
-    # Extração de valores
     cdg = base_indicators.get('CDG')
     ncg = base_indicators.get('NCG')
     t = base_indicators.get('T')
@@ -145,11 +138,9 @@ def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> T
     pcf = reclassified_data.get('PC_Fornecedores', 0) + reclassified_data.get('PC_Outros', 0) + reclassified_data.get('T_DividaCurtoPrazo', 0)
     pnc = reclassified_data.get('PNC_Total')
     
-    # Validação de dados essenciais
     if any(v is None for v in [cdg, ncg, t, tipo_estrutura, ativo_total, receita_liquida, pnc]):
         return None, "Dados insuficientes"
-           
-    # Cálculo dos componentes X
+            
     x1 = safe_divide(cdg, ativo_total)
     x2 = safe_divide(ncg, receita_liquida)
     x3 = float(tipo_estrutura)
@@ -159,27 +150,29 @@ def calculate_z_score_prado(reclassified_data: Dict, base_indicators: Dict) -> T
     if any(x is None for x in [x1, x2, x4, x5]):
         return None, "Cálculo impossível"
 
-    # Equação Z de Prado
     z = 1.887 + (0.899 * x1) + (0.971 * x2) - (0.444 * x3) + (0.055 * x4) - (0.980 * x5)
 
-    # Classificação do Risco
     if z > 2.675: risk_class = "Classe A (Risco Mínimo)"
     elif 2.0 < z <= 2.675: risk_class = "Classe B"
     elif 1.5 < z <= 2.0: risk_class = "Classe C"
     elif 1.0 < z <= 1.5: risk_class = "Classe D (Atenção)"
     else: risk_class = "Classe E (Risco Elevado)"
-       
+        
     return round(z, 4), risk_class
 
 def run_multi_year_analysis(company_df: pd.DataFrame, cvm_code: int, years: List[int]) -> Tuple[Dict, str]:
     """Orquestra a análise completa do Modelo Fleuriet para uma empresa ao longo de vários anos."""
     all_results = []
     company_name = company_df['denom_cia'].iloc[0] if not company_df.empty else f"Empresa CVM {cvm_code}"
-    company_df['DT_REFER'] = pd.to_datetime(company_df['DT_REFER'])
+    
+    # ## CORREÇÃO ##: Usando 'dt_refer' em minúsculo.
+    company_df['dt_refer'] = pd.to_datetime(company_df['dt_refer'])
 
     for year in sorted(years):
         reference_date = pd.to_datetime(f"{year}-12-31")
-        df_year = company_df[company_df['DT_REFER'] == reference_date].copy()
+        
+        # ## CORREÇÃO ##: Usando 'dt_refer' em minúsculo.
+        df_year = company_df[company_df['dt_refer'] == reference_date].copy()
         
         if df_year.empty:
             logger.warning(f"Nenhum dado encontrado para o ano {year} para a empresa CVM {cvm_code}.")
