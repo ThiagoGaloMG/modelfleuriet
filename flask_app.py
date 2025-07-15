@@ -78,7 +78,7 @@ def get_ticker_mapping_df():
         except Exception as e:
             logger.error(f"Erro ao carregar mapeamento de tickers de '{file_path}': {e}", exc_info=True)
             ticker_mapping_df = pd.DataFrame() # Garante que seja um DataFrame vazio
-    return ticker_mapping_df
+    return df_tickers_mapping
 
 def get_ibovespa_analysis_system():
     global ibovespa_analysis_system_instance
