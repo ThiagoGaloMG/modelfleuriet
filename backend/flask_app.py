@@ -1,5 +1,6 @@
 # ==============================================================================
 # flask_app.py - Servidor Principal da Aplicação de Análise Financeira
+# VERSÃO FINAL - AJUSTADA PARA ESTRUTURA backend/ E frontend/
 # ==============================================================================
 # Este script inicializa e executa a aplicação Flask, que serve como backend
 # para o frontend em React e expõe as APIs de análise.
@@ -37,18 +38,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- Configuração de Caminhos (Paths) ---
-# CORREÇÃO: Simplificação da lógica de caminhos.
-# No ambiente da Render, o diretório raiz do seu projeto é onde o script está.
-# os.path.dirname(__file__) aponta para '/opt/render/project/src' no servidor.
-# Vamos usar este como nosso único ponto de referência.
+# PROJECT_ROOT agora aponta para a pasta /backend, pois é onde este script está.
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# Adiciona o diretório 'core' ao path do Python para que os imports funcionem.
+# Adiciona o diretório 'core' (que está dentro de 'backend') ao path do Python.
 CORE_PATH = os.path.join(PROJECT_ROOT, 'core')
 if CORE_PATH not in sys.path:
     sys.path.insert(0, CORE_PATH)
 
-logger.info(f"Project Root (base para todos os caminhos): {PROJECT_ROOT}")
+logger.info(f"Backend Project Root (PROJECT_ROOT): {PROJECT_ROOT}")
 logger.info(f"Core Path (adicionado ao sys.path): {CORE_PATH}")
 
 # --- Imports dos Módulos do Projeto ---
@@ -60,8 +58,14 @@ from utils import clean_data_for_json
 from ibovespa_utils import get_ibovespa_tickers
 
 # --- Inicialização da Aplicação Flask ---
-# Define o caminho para a pasta de build do frontend (React/Vite). O padrão do Vite é 'dist'.
-FRONTEND_BUILD_PATH = os.path.join(PROJECT_ROOT, 'dist')
+
+# ==============================================================================
+# >>>>> ALTERAÇÃO CRÍTICA AQUI <<<<<
+# Como este script está em /backend, precisamos "subir um nível" (../) para
+# encontrar a pasta 'dist' que o Vite cria na raiz do projeto.
+# ==============================================================================
+FRONTEND_BUILD_PATH = os.path.abspath(os.path.join(PROJECT_ROOT, '..', 'dist'))
+
 logger.info(f"Configurando pasta estática para servir frontend de: {FRONTEND_BUILD_PATH}")
 
 # Inicializa o Flask com o caminho estático correto.
@@ -105,7 +109,7 @@ def get_db_manager():
 def get_ticker_mapping_df():
     global ticker_mapping_df
     if ticker_mapping_df is None:
-        # CORREÇÃO: Caminho para o CSV agora usa o PROJECT_ROOT corrigido.
+        # Este caminho continua correto, pois a pasta 'data' está dentro de 'backend'.
         file_path = os.path.join(PROJECT_ROOT, 'data', 'mapeamento_tickers.csv')
         logger.info(f"Carregando mapeamento de tickers de {file_path}...")
         try:
@@ -162,6 +166,7 @@ def serve_react_app(path):
         return jsonify({"error": "Frontend não encontrado. Verifique a configuração de build."}), 404
 
 # --- Rotas de API ---
+# (O restante do arquivo continua o mesmo, pois as rotas não dependem de caminhos de arquivo)
 
 @app.route('/api/health')
 @cross_origin()
@@ -171,7 +176,7 @@ def health_check():
         db_ok = get_db_manager() is not None
         ticker_map_ok = get_ticker_mapping_df() is not None and not get_ticker_mapping_df().empty
         system_ok = get_ibovespa_analysis_system() is not None
-        
+
         status = {
             'status': 'healthy' if all([db_ok, ticker_map_ok, system_ok]) else 'degraded',
             'timestamp': datetime.now().isoformat(),
@@ -199,10 +204,10 @@ def get_fleuriet_companies_api():
         with db_manager.get_engine().connect() as connection:
             query = text('SELECT DISTINCT "CD_CVM", "DENOM_CIA" FROM public.financial_data ORDER BY "DENOM_CIA";')
             df_companies_db = pd.read_sql(query, connection)
-        
+
         df_companies_db.rename(columns={'DENOM_CIA': 'NOME_EMPRESA'}, inplace=True)
         final_df = pd.merge(df_companies_db, ticker_map, on='CD_CVM', how='left').dropna(subset=['TICKER'])
-        
+
         companies_list = [
             {'company_id': str(row['CD_CVM']), 'company_name': row['NOME_EMPRESA_x'], 'ticker': row['TICKER']}
             for _, row in final_df.iterrows()
@@ -235,7 +240,7 @@ def analyze_fleuriet_api():
 
         if df_company.empty:
             return jsonify({"error": f"Nenhum dado financeiro encontrado para a empresa CVM {cvm_code} no período."}), 404
-        
+
         fleuriet_results, fleuriet_error = run_multi_year_analysis(df_company, cvm_code, years_to_analyze)
         if fleuriet_error:
             return jsonify({"error": fleuriet_error}), 500
@@ -259,13 +264,13 @@ def run_complete_analysis_api():
 
         data = request.get_json(silent=True) or {}
         num_companies = data.get('num_companies')
-        
+
         start_time = datetime.now()
         report = system.run_complete_analysis(num_companies=num_companies)
         end_time = datetime.now()
-        
+
         report['execution_time_seconds'] = (end_time - start_time).total_seconds()
-        
+
         return jsonify(report)
     except Exception as e:
         logger.error(f"Erro ao executar análise completa: {e}", exc_info=True)
@@ -280,11 +285,11 @@ def get_company_analysis_api(ticker):
         system = get_ibovespa_analysis_system()
         if not system:
             return jsonify({"error": "Sistema de análise não inicializado."}), 503
-            
+
         analysis_result = system.get_company_analysis(ticker.upper())
         if not analysis_result or analysis_result.get('error'):
              return jsonify(analysis_result or {"error": "Análise não encontrada para o ticker."}), 404
-             
+
         return jsonify(analysis_result)
     except Exception as e:
         logger.error(f"Erro ao obter dados para {ticker}: {e}", exc_info=True)
@@ -298,7 +303,7 @@ def get_ibovespa_companies_list_api():
         system = get_ibovespa_analysis_system()
         if not system:
             return jsonify({"error": "Sistema de análise não inicializado."}), 503
-            
+
         companies = system.get_ibovespa_company_list()
         return jsonify({'companies': companies, 'total': len(companies)})
     except Exception as e:
