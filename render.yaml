@@ -1,4 +1,7 @@
 # Arquivo: render.yaml
+# Versão: COMPLETA E ATUALIZADA
+# Correção: Utiliza o comando 'npm --prefix' que é mais robusto que 'cd' para
+# executar os scripts de frontend no diretório correto.
 
 services:
   - type: web
@@ -7,9 +10,9 @@ services:
     plan: free
     env: python
     rootDir: .
-    # Comando de build corrigido: uma única linha que executa todos os passos em sequência.
-    buildCommand: "pip install -r requirements.txt && cd frontend && npm install && npm run build"
-    # Comando para iniciar o servidor após o build ser concluído com sucesso.
+    # Comando de build final, usando --prefix:
+    buildCommand: "pip install -r requirements.txt && npm install --prefix frontend && npm run build --prefix frontend"
+    # Comando para iniciar o servidor após o build ser bem-sucedido:
     startCommand: "gunicorn flask_app:app"
     envVars:
       - key: SECRET_KEY
@@ -18,7 +21,7 @@ services:
         value: '3.10.13'
       - key: DATABASE_URL
         fromDatabase:
-          name: modelfleuriet-db # Verifique se este é o nome correto do seu DB na Render
+          name: modelfleuriet-db # Garanta que este nome bate com o do seu DB no Render
           property: connectionString
 
 databases:
