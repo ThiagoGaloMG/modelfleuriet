@@ -1,7 +1,5 @@
 # Arquivo: render.yaml
-# Versão: DIAGNÓSTICO AVANÇADO
-# Objetivo: Listar todos os arquivos no servidor para verificar se
-# o 'src/main.jsx' realmente existe antes do build.
+# Versão: FINAL - Para estrutura com Backend e Frontend separados
 
 services:
   - type: web
@@ -9,10 +7,11 @@ services:
     region: oregon
     plan: free
     env: python
-    rootDir: .
-    # Comando de build com diagnóstico:
-    buildCommand: "pip install -r requirements.txt && npm install && echo '---[ INICIANDO LISTAGEM DE ARQUIVOS ]---' && ls -lR && echo '---[ FIM DA LISTAGEM, INICIANDO BUILD ]---' && npm run build"
-    # Comando para iniciar o servidor:
+    # O serviço agora roda a partir da pasta 'backend'
+    rootDir: ./backend
+    # Comandos de build atualizados para a nova estrutura
+    buildCommand: "pip install -r requirements.txt && npm install --prefix ../ && npm run build --prefix ../"
+    # O comando de start continua o mesmo, pois já estamos dentro da pasta 'backend'
     startCommand: "gunicorn flask_app:app"
     envVars:
       - key: SECRET_KEY
