@@ -1,5 +1,5 @@
 // modelfleuriet/frontend/src/components/ui/card.jsx
-import *s React from 'react';
+import * as React from 'react';
 import { cn } from '../../lib/utils.js';
 
 const Card = React.forwardRef(({ className, ...props }, ref) => (
