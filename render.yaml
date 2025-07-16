@@ -1,5 +1,7 @@
 # Arquivo: render.yaml
-# Versão: FINAL - Para estrutura de projeto simplificada
+# Versão: DIAGNÓSTICO AVANÇADO
+# Objetivo: Listar todos os arquivos no servidor para verificar se
+# o 'src/main.jsx' realmente existe antes do build.
 
 services:
   - type: web
@@ -8,8 +10,8 @@ services:
     plan: free
     env: python
     rootDir: .
-    # Comando de build simplificado, pois todos os arquivos estão na raiz:
-    buildCommand: "pip install -r requirements.txt && npm install && npm run build"
+    # Comando de build com diagnóstico:
+    buildCommand: "pip install -r requirements.txt && npm install && echo '---[ INICIANDO LISTAGEM DE ARQUIVOS ]---' && ls -lR && echo '---[ FIM DA LISTAGEM, INICIANDO BUILD ]---' && npm run build"
     # Comando para iniciar o servidor:
     startCommand: "gunicorn flask_app:app"
     envVars:
