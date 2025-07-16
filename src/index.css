@@ -1,12 +1,19 @@
-/* modelfleuriet/frontend/src/index.css */
+/* src/index.css */
 
-/* Importe a fonte Inter para toda a aplica��o */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+/* Este arquivo é o ponto de entrada para o Tailwind CSS.
+  Ele importa as camadas base, de componentes e de utilitários do Tailwind.
+  Também definimos a fonte padrão 'Inter' para todo o corpo do documento,
+  garantindo uma tipografia limpa e moderna.
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: 'Inter', sans-serif;
+@layer base {
+  body {
+    @apply font-sans bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 antialiased;
+  }
 }
