@@ -1,5 +1,5 @@
 # Arquivo: render.yaml
-# Versão: FINAL - Para estrutura com Backend e Frontend separados
+# Versão: FINAL E COMPLETA - Com movimentação de arquivos de build
 
 services:
   - type: web
@@ -7,11 +7,13 @@ services:
     region: oregon
     plan: free
     env: python
-    # O serviço agora roda a partir da pasta 'backend'
     rootDir: ./backend
-    # Comandos de build atualizados para a nova estrutura
-    buildCommand: "pip install -r requirements.txt && npm install --prefix ../ && npm run build --prefix ../"
-    # O comando de start continua o mesmo, pois já estamos dentro da pasta 'backend'
+    buildCommand: |
+      pip install -r requirements.txt && \
+      npm install --prefix ../ && \
+      npm run build --prefix ../ && \
+      mkdir -p ./public && \
+      mv ../dist/* ./public/
     startCommand: "gunicorn flask_app:app"
     envVars:
       - key: SECRET_KEY
