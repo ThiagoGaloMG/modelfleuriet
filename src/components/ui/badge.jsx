@@ -1,5 +1,5 @@
 // modelfleuriet/frontend/src/components/ui/badge.jsx
-import *s React from 'react';
+import * as React from 'react';
 import { cn } from '../../lib/utils.js';
 
 const Badge = React.forwardRef(({ className, variant, ...props }, ref) => {
