@@ -1,104 +1,48 @@
-/* modelfleuriet/frontend/App.css */
+/* src/App.css */
 
-/* Estilos básicos para o componente App, se necessário, além do Tailwind */
-.App {
-  font-family: 'Inter', sans-serif;
-  text-align: center;
-}
+/* Este arquivo contém estilos personalizados que complementam o Tailwind.
+  Usamos a diretiva `@layer components` para criar classes de componentes 
+  reutilizáveis, mantendo nosso JSX limpo e consistente.
+*/
 
-/* Estilos para a tabela */
-.min-w-full {
-  width: 100%;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-.divide-y > * + * {
-  border-top-width: 1px;
-}
+@layer components {
+  /* Estilo padrão para inputs e selects, para consistência em todo o app. */
+  .input-style {
+    @apply mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-colors;
+  }
 
-.table-header-sortable {
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
+  /* Estilos para cabeçalhos de tabela */
+  .th-style {
+    @apply px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider;
+  }
+  
+  /* Estilos para células de tabela */
+  .td-style {
+    @apply px-6 py-4 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300;
+  }
 
-.table-header-sortable:hover {
-  background-color: #e2e8f0; /* slate-200 */
-}
-
-/* Loader spinner */
-.loader {
-  border: 4px solid #f3f3f3; /* Light grey */
-  border-top: 4px solid #3b82f6; /* Blue */
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  animation: spin 1s linear infinite;
-  margin: auto;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-/* Estilos para cards de métricas */
-.metric-card {
-  background-color: #ffffff;
-  padding: 1.5rem;
-  border-radius: 0.5rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-}
-
-.metric-card h3 {
-  color: #64748b; /* slate-500 */
-  font-size: 0.875rem;
-  font-weight: 500;
-  margin-bottom: 0.25rem;
-}
-
-.metric-card p {
-  font-size: 1.875rem; /* 3xl */
-  font-weight: 700;
-  color: #0f172a; /* slate-900 */
-}
-
-.metric-card p.text-green-600 {
-  color: #22c55e;
-}
-
-.metric-card p.text-blue-600 {
-  color: #3b82f6;
-}
-
-/* Estilos para gráfico de dispersão */
-.chart-container {
-  position: relative;
-  width: 100%;
-  max-width: 800px; /* Limita a largura máxima do gráfico */
-  margin-left: auto;
-  margin-right: auto;
-  height: 400px; /* Altura fixa para o gráfico */
-  max-height: 50vh; /* Máximo 50% da altura da viewport */
-}
-
-@media (max-width: 768px) {
-  .chart-container {
-    height: 300px; /* Altura menor em dispositivos móveis */
-    max-height: 40vh;
+  /* Variação para um cabeçalho de tabela que pode ser clicado para ordenar */
+  .table-header-sortable {
+    @apply th-style cursor-pointer transition-colors hover:bg-gray-200 dark:hover:bg-gray-700 rounded-t-md;
   }
 }
 
-/* Estilos para a barra de progresso do portfólio */
-.progress-bar-container {
-  background-color: #e2e8f0; /* slate-200 */
-  border-radius: 9999px; /* Full rounded */
-  height: 0.75rem; /* h-3 */
-  overflow: hidden;
+/* Estilos para o container do gráfico para garantir que ele seja responsivo
+  e não estique a página desnecessariamente.
+*/
+.chart-container {
   position: relative;
+  height: 400px; /* Altura padrão para desktop */
+  width: 100%;
 }
 
-.progress-bar-fill {
-  background-color: #3b82f6; /* blue-500 */
-  height: 100%;
-  border-radius: 9999px; /* Full rounded */
-  transition: width 0.5s ease-in-out;
+/* Media query para tornar os gráficos mais compactos em telas menores */
+@media (max-width: 768px) {
+  .chart-container {
+    height: 300px; /* Altura menor para dispositivos móveis */
+  }
 }
