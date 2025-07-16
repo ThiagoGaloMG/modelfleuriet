@@ -1,27 +1,19 @@
+# Arquivo: render.yaml
+
 services:
   - type: web
     name: modelfleuriet
     region: oregon
     plan: free
     env: python
-    # O diretório raiz do seu repositório. '.' está correto.
     rootDir: .
-    buildCommand: |
-      # 1. Instala as dependências do Python (backend)
-      pip install -r requirements.txt
-      
-      # 2. Navega para a pasta do frontend
-      cd frontend
-      
-      # 3. Instala as dependências do Node.js (React)
-      npm install
-      
-      # 4. Compila a aplicação React, criando a pasta 'dist'
-      npm run build
+    # Comando de build corrigido: uma única linha que executa todos os passos em sequência.
+    buildCommand: "pip install -r requirements.txt && cd frontend && npm install && npm run build"
+    # Comando para iniciar o servidor após o build ser concluído com sucesso.
     startCommand: "gunicorn flask_app:app"
     envVars:
       - key: SECRET_KEY
-        generateValue: true # Mais seguro que deixar a chave no código
+        generateValue: true
       - key: PYTHON_VERSION
         value: '3.10.13'
       - key: DATABASE_URL
@@ -29,7 +21,6 @@ services:
           name: modelfleuriet-db # Verifique se este é o nome correto do seu DB na Render
           property: connectionString
 
-# Adicione a definição do seu banco de dados se ainda não estiver aqui
 databases:
   - name: modelfleuriet-db
     plan: free
