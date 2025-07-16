@@ -1,0 +1,577 @@
+# modelfleuriet/core/valuation_logic.py
+
+import pandas as pd
+import numpy as np
+import logging
+from typing import Dict, List, Optional, Tuple, Union, Any
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.cluster import KMeans
+import warnings
+
+# Ignorar FutureWarnings de sklearn
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=UserWarning) # Para KMeans n_init
+
+logger = logging.getLogger(__name__)
+
+# Importa módulos auxiliares da nova estrutura core
+from core.data_collector import CompanyFinancialData # Usamos o dataclass CompanyFinancialData daqui
+from core.ibovespa_utils import get_selic_rate, get_market_sectors # Para taxas e setores
+
+
+class FinancialMetricsCalculator:
+    """Classe responsável pelo cálculo das métricas financeiras:
+    WACC, EVA, EFV, Riqueza Atual, Riqueza Futura.
+    Baseado nas Equações 1-5 e metodologia do TCC do usuário.
+    """
+    
+    def __init__(self, selic_rate: Optional[float] = None):
+        self.tax_rate = 0.34 # Alíquota de IR e CSLL para NOPAT e beta (34% conforme TCC p.17, 20)
+        self.risk_free_rate = (selic_rate / 100) if selic_rate else 0.10 # Selic como taxa livre de risco, default 10%
+        self.market_risk_premium = 0.06 # Prêmio de risco de mercado (exemplo: 6%)
+        # Estes deveriam vir de uma fonte confiável ou ser ajustáveis.
+
+    def _calculate_nopat(self, ebit: float) -> float:
+        """Calcula o NOPAT (Net Operating Profit After Taxes)."""
+        return ebit * (1 - self.tax_rate)
+
+    def _calculate_working_capital(self, data: CompanyFinancialData) -> float:
+        """Calcula o Capital de Giro (Ativo Circulante - Passivo Circulante)."""
+        return data.current_assets - data.current_liabilities
+
+    def _calculate_ncg(self, data: CompanyFinancialData) -> float:
+        """Calcula a Necessidade de Capital de Giro (NCG).
+        NCG = Contas a Receber + Estoques - Fornecedores (TCC p. 23)
+        """
+        return data.accounts_receivable + data.inventory - data.accounts_payable
+
+    def _calculate_capital_employed(self, data: CompanyFinancialData) -> float:
+        """Calcula o Capital Empregado (Imobilizado + NCG).
+        Conforme TCC p. 17: "soma entre necessidade de capital de giro (NCG) e imobilizado".
+        """
+        imobilizado = data.property_plant_equipment
+        ncg = self._calculate_ncg(data)
+        
+        capital_employed = imobilizado + ncg
+        if capital_employed < 0: # Capital Empregado não deve ser negativo no contexto do EVA
+            logger.warning(f"Capital Empregado negativo para {data.ticker}: {capital_employed}. Ajustando para 0 ou um pequeno valor positivo para cálculo de EVA.")
+            # Dependendo da metodologia, pode-se tratar CE negativo de diferentes formas.
+            # Para evitar divisão por zero ou resultados sem sentido no EVA%, ajustar.
+            return 1.0 # Valor pequeno para evitar divisão por zero, ou um tratamento mais sofisticado
+        return capital_employed
+
+    def _calculate_beta(self, ticker: str) -> float:
+        """
+        Calcula ou busca o Beta da empresa.
+        Para a metodologia do TCC, o Beta de Hamada é mencionado (p. 20, 55).
+        Para esta implementação, usaremos um beta padrão ou um beta de mercado se disponível.
+        Um cálculo de beta de Hamada requer dados históricos de alavancagem,
+        o que não está diretamente disponível para o dataclass atual ou API Brapi.dev de forma simples.
+        """
+        # Exemplo simplificado. Em produção, você integraria um cálculo de Beta de Hamada
+        # que requer dados históricos da dívida e PL, e o beta desalavancado do setor.
+        # Por enquanto, usar um valor padrão ou buscar de uma fonte confiável.
+        
+        # Para fins de demonstração, usar um beta padrão.
+        # Em uma implementação real, o beta viria de uma API de fundamentos ou seria calculado
+        # a partir de dados históricos de retornos e da estrutura de capital da empresa.
+        
+        # O beta também pode vir dos dados brutos do BrapiClient se ele fornecer.
+        # market_data = self.brapi.get_quote(ticker) # Se o coletor passasse o brapi client
+        # if market_data and market_data.get('beta'): return market_data['beta']
+
+        return 1.0 # Beta padrão se não for calculado/encontrado
+
+    def _calculate_cost_of_equity_ke(self, beta: float) -> float:
+        """Calcula o Custo do Capital Próprio (Ke) usando CAPM.
+        Ke = Taxa sem Risco + Beta * Prêmio de Risco de Mercado (TCC p. 20)
+        """
+        return self.risk_free_rate + beta * self.market_risk_premium
+    
+    def _calculate_cost_of_debt_kd(self, data: CompanyFinancialData) -> float:
+        """Calcula o Custo do Capital de Terceiros (Kd).
+        Simplificação: assumir um custo ligeiramente acima da taxa sem risco se não houver dados de despesas financeiras.
+        Uma implementação completa precisaria de 'InterestExpense' do DRE e 'TotalDebt' do balanço.
+        """
+        if data.total_debt <= 0 or data.net_income == 0: # Se não há dívida ou lucro líquido relevante para calcular um custo
+            return self.risk_free_rate * 1.2 # Estimativa: Selic + 20%
+        
+        # Se tiver despesas financeiras no CompanyFinancialData, usar:
+        # interest_expense = data.interest_expense # Campo que não está no dataclass CompanyFinancialData atual
+        # if interest_expense and data.total_debt > 0:
+        #     return interest_expense / data.total_debt
+        
+        # Para demonstração e dado os dados disponíveis:
+        # Assumimos que o custo da dívida é um pouco acima da Selic
+        return self.risk_free_rate * 1.2
+
+    def _calculate_wacc(self, data: CompanyFinancialData) -> float:
+        """Calcula o WACC (Custo Médio Ponderado de Capital).
+        CMPC = (Kd x %Kd) + (Ke x %Ke) - Equação 5 (TCC p. 20)
+        %Ke = Equity / (Equity + TotalDebt)
+        %Kd = TotalDebt / (Equity + TotalDebt)
+        Ajustado pelo benefício fiscal da dívida: Kd * (1 - TaxRate) * %Kd
+        """
+        total_capital = data.equity + data.total_debt
+        if total_capital <= 0:
+            logger.warning(f"Total Capital (Equity + Debt) é zero ou negativo para {data.ticker}. Não é possível calcular WACC.")
+            return np.nan
+
+        beta = self._calculate_beta(data.ticker) # Calcula ou busca o beta
+        ke = self._calculate_cost_of_equity_ke(beta)
+        kd = self._calculate_cost_of_debt_kd(data) # Kd é a taxa de custo da dívida
+        
+        percent_ke = data.equity / total_capital
+        percent_kd = data.total_debt / total_capital
+        
+        wacc = (ke * percent_ke) + (kd * (1 - self.tax_rate) * percent_kd)
+        return wacc
+
+    def _calculate_roce(self, data: CompanyFinancialData, capital_employed: float) -> float:
+        """Calcula o ROCE (Retorno do Capital Empregado).
+        RCE = Fluxo de Caixa Operacional / Capital Empregado (TCC p. 18, derivado)
+        """
+        if capital_employed <= 0:
+            return np.nan
+        
+        # NOPAT (Lucro Operacional Líquido após Impostos) é o mais comum para ROCE
+        nopat = self._calculate_nopat(data.ebit)
+        
+        return nopat / capital_employed
+
+    def calculate_eva(self, data: CompanyFinancialData) -> Tuple[float, float]:
+        """Calcula o EVA (Economic Value Added) absoluto e percentual.
+        EVA = (Capital Empregado) x (Retorno do Capital Empregado - Custo Médio Ponderado de Capital) - Equação 1 (TCC p. 17)
+        """
+        capital_employed = self._calculate_capital_employed(data)
+        if capital_employed <= 0: # Capital empregado precisa ser positivo para EVA significativo
+             return np.nan, np.nan
+
+        wacc = self._calculate_wacc(data)
+        roce = self._calculate_roce(data, capital_employed)
+
+        if np.isnan(wacc) or np.isnan(roce):
+            return np.nan, np.nan
+        
+        eva_abs = capital_employed * (roce - wacc)
+        eva_pct = (roce - wacc) * 100 # Em percentual, como no TCC
+
+        return eva_abs, eva_pct
+
+    def calculate_efv(self, data: CompanyFinancialData) -> Tuple[float, float]:
+        """Calcula o EFV (Economic Future Value) absoluto e percentual.
+        EFV = Riqueza Futura Esperada - Riqueza Atual - Equação 2 (TCC p. 19)
+        """
+        # Calcular Riqueza Atual e Futura primeiro
+        riqueza_atual_abs = self.calculate_riqueza_atual(data)
+        riqueza_futura_esperada_abs = self.calculate_riqueza_futura(data)
+
+        if np.isnan(riqueza_atual_abs) or np.isnan(riqueza_futura_esperada_abs):
+            return np.nan, np.nan
+
+        efv_abs = riqueza_futura_esperada_abs - riqueza_atual_abs
+        
+        # EFV percentual (TCC p. 103, Apêndice C: EFV % = EFV / Capital Empregado)
+        capital_employed = self._calculate_capital_employed(data)
+        if capital_employed <= 0:
+            return np.nan, np.nan
+        
+        efv_pct = (efv_abs / capital_employed) * 100
+        
+        return efv_abs, efv_pct
+
+    def calculate_riqueza_atual(self, data: CompanyFinancialData) -> float:
+        """Calcula a Riqueza Atual.
+        Riqueza Atual = EVA / CMPC - Equação 4 (TCC p. 20)
+        """
+        eva_abs, _ = self.calculate_eva(data)
+        wacc = self._calculate_wacc(data)
+        
+        if np.isnan(eva_abs) or np.isnan(wacc) or wacc == 0:
+            return np.nan
+        
+        return eva_abs / wacc
+
+    def calculate_riqueza_futura(self, data: CompanyFinancialData) -> float:
+        """Calcula a Riqueza Futura Esperada.
+        Riqueza Futura Esperada = {(preço de ações ordinárias x quantidade de ações ordinárias emitidas)
+                                    + (preço de ações preferenciais x quantidade de ações preferenciais emitidas)
+                                    + valor da dívida da empresa - capital empregado} - Equação 3 (TCC p. 20)
+        """
+        # market_cap já inclui todas as ações negociadas na bolsa (ordinárias + preferenciais)
+        market_value_equity = data.market_cap 
+        total_debt = data.total_debt # Total de dívidas da empresa
+        capital_employed = self._calculate_capital_employed(data)
+
+        if np.isnan(market_value_equity) or np.isnan(total_debt) or np.isnan(capital_employed):
+            return np.nan
+
+        # Conforme a formulação do TCC:
+        riqueza_futura = (market_value_equity + total_debt) - capital_employed
+        return riqueza_futura
+
+    def calculate_upside(self, data: CompanyFinancialData, efv_abs: float) -> float:
+        """Calcula o potencial de valorização (Upside).
+        Upside = (EFV Absoluto / Market Cap) * 100
+        """
+        if data.market_cap <= 0:
+            return np.nan
+        return (efv_abs / data.market_cap) * 100
+
+class CompanyRanking:
+    """
+    Classifica empresas com base nas métricas financeiras.
+    """
+    def __init__(self, calculator: FinancialMetricsCalculator):
+        self.calculator = calculator
+
+    def _calculate_all_metrics(self, data: CompanyFinancialData) -> Dict[str, Union[float, str]]:
+        """Calcula todas as métricas para uma única empresa."""
+        try:
+            wacc = self.calculator._calculate_wacc(data)
+            if np.isnan(wacc): wacc = 0.0
+
+            eva_abs, eva_pct = self.calculator.calculate_eva(data)
+            efv_abs, efv_pct = self.calculator.calculate_efv(data)
+            riqueza_atual = self.calculator.calculate_riqueza_atual(data)
+            riqueza_futura = self.calculator.calculate_riqueza_futura(data)
+            upside = self.calculator.calculate_upside(data, efv_abs) if not np.isnan(efv_abs) else np.nan
+            
+            # Calcular o Score Combinado
+            # A ponderação exata viria de uma análise mais profunda ou do advanced_ranking
+            score_combinado = 0
+            if not np.isnan(eva_pct): score_combinado += eva_pct * 0.4
+            if not np.isnan(efv_pct): score_combinado += efv_pct * 0.4
+            if not np.isnan(upside): score_combinado += upside * 0.2
+            
+            return {
+                'ticker': data.ticker,
+                'company_name': data.company_name,
+                'market_cap': data.market_cap,
+                'stock_price': data.stock_price,
+                'wacc_percentual': wacc * 100 if not np.isnan(wacc) else np.nan,
+                'eva_abs': eva_abs,
+                'eva_percentual': eva_pct,
+                'efv_abs': efv_abs,
+                'efv_percentual': efv_pct,
+                'riqueza_atual': riqueza_atual,
+                'riqueza_futura': riqueza_futura,
+                'upside_percentual': upside,
+                'combined_score': score_combinado,
+                'raw_data': data.__dict__ # Incluir todos os dados brutos/coletados da empresa
+            }
+        except Exception as e:
+            logger.error(f"Erro ao calcular métricas para {data.ticker}: {e}")
+            return {'ticker': data.ticker, 'company_name': data.company_name, 'error': str(e)}
+
+    def generate_ranking_report(self, companies_data: Dict[str, CompanyFinancialData]) -> pd.DataFrame:
+        """
+        Gera um DataFrame com o relatório de ranking de todas as empresas.
+        """
+        report_data = []
+        for ticker, data in companies_data.items():
+            metrics = self._calculate_all_metrics(data)
+            if 'error' not in metrics:
+                report_data.append(metrics)
+            else:
+                logger.warning(f"Empresa {ticker} excluída do relatório devido a erro: {metrics['error']}")
+
+        df = pd.DataFrame(report_data)
+        
+        # Limpar NaN/Inf para garantir que o sort funcione
+        for col in ['wacc_percentual', 'eva_percentual', 'efv_percentual', 'riqueza_atual', 'riqueza_futura', 'upside_percentual', 'combined_score']:
+            if col in df.columns:
+                df[col] = df[col].replace([np.inf, -np.inf], np.nan)
+                df[col] = df[col].fillna(0) # Substituir NaN por 0 para ranking, ou outro valor estratégico
+
+        return df
+
+    def rank_by_metric(self, df: pd.DataFrame, metric: str, ascending: bool = False) -> List[Tuple[str, float]]:
+        """
+        Classifica as empresas por uma métrica específica e retorna uma lista de tuplas.
+        """
+        if metric not in df.columns:
+            logger.warning(f"Métrica '{metric}' não encontrada para ranking.")
+            return []
+        
+        sorted_df = df.sort_values(by=metric, ascending=ascending)
+        return sorted_df[['ticker', metric]].values.tolist()
+
+    def rank_by_eva(self, df: pd.DataFrame) -> List[Tuple[str, float, float]]:
+        """Classifica empresas por EVA (percentual)."""
+        sorted_df = df.sort_values(by='eva_percentual', ascending=False)
+        return sorted_df[['ticker', 'eva_abs', 'eva_percentual']].values.tolist()
+
+    def rank_by_efv(self, df: pd.DataFrame) -> List[Tuple[str, float, float]]:
+        """Classifica empresas por EFV (percentual)."""
+        sorted_df = df.sort_values(by='efv_percentual', ascending=False)
+        return sorted_df[['ticker', 'efv_abs', 'efv_percentual']].values.tolist()
+
+    def rank_by_upside(self, df: pd.DataFrame) -> List[Tuple[str, float]]:
+        """Classifica empresas por potencial de valorização (Upside)."""
+        sorted_df = df.sort_values(by='upside_percentual', ascending=False)
+        return sorted_df[['ticker', 'upside_percentual']].values.tolist()
+    
+    def rank_by_combined_score(self, df: pd.DataFrame) -> List[Tuple[str, float]]:
+        """Classifica empresas por score combinado."""
+        sorted_df = df.sort_values(by='combined_score', ascending=False)
+        return sorted_df[['ticker', 'combined_score']].values.tolist()
+
+
+class AdvancedRanking:
+    """Classe para classificações avançadas e análises sofisticadas,
+    baseadas nas análises de correlação e value drivers do TCC.
+    """
+    
+    def __init__(self, calculator: FinancialMetricsCalculator):
+        self.calculator = calculator
+        self.scaler = StandardScaler()
+        self.min_max_scaler = MinMaxScaler()
+        
+    def _prepare_data_for_ml(self, companies_data: Dict[str, CompanyFinancialData]) -> pd.DataFrame:
+        """
+        Prepara os dados para algoritmos de ML, calculando métricas e lidando com NaNs.
+        Foca em métricas que o TCC correlaciona (EVA%, EFV%, Upside%, Riqueza).
+        """
+        data_for_ml = []
+        for ticker, data in companies_data.items():
+            eva_abs, eva_pct = self.calculator.calculate_eva(data)
+            efv_abs, efv_pct = self.calculator.calculate_efv(data)
+            riqueza_atual = self.calculator.calculate_riqueza_atual(data)
+            riqueza_futura = self.calculator.calculate_riqueza_futura(data)
+            upside = self.calculator.calculate_upside(data, efv_abs) if not np.isnan(efv_abs) else np.nan
+
+            data_for_ml.append({
+                'ticker': ticker,
+                'company_name': data.company_name,
+                'eva_pct': eva_pct,
+                'efv_pct': efv_pct,
+                'upside_pct': upside,
+                'riqueza_atual': riqueza_atual,
+                'riqueza_futura': riqueza_futura,
+                'market_cap': data.market_cap, # Pode ser usado como feature ou para ponderação
+                'revenue': data.revenue # Pode ser usado como feature ou para ponderação
+            })
+        
+        df = pd.DataFrame(data_for_ml)
+        
+        df = df.replace([np.inf, -np.inf], np.nan)
+        df = df.fillna(0) # Preencher NaNs com 0 para não quebrar o scaler/kmeans.
+        
+        return df
+
+    def custom_rank_companies(self, companies_data: Dict[str, CompanyFinancialData], criteria: Any) -> List[Dict]:
+        """
+        Realiza um ranking personalizado de empresas baseado em critérios ponderados.
+        """
+        criteria.normalize_weights()
+        
+        processed_data = []
+        for ticker, data in companies_data.items():
+            eva_abs, eva_pct = self.calculator.calculate_eva(data)
+            efv_abs, efv_pct = self.calculator.calculate_efv(data)
+            upside = self.calculator.calculate_upside(data, efv_abs) if not np.isnan(efv_abs) else np.nan
+            
+            profitability_score = (data.net_income / data.revenue) * 100 if data.revenue > 0 else 0
+            liquidity_score = (data.current_assets / data.current_liabilities) * 100 if data.current_liabilities > 0 else 0
+
+            # Normalizar métricas para ponderação (MinMaxScaler é robusto para valores com diferentes magnitudes)
+            # É importante escalar as métricas para que os pesos funcionem corretamente.
+            # Fit/transform deve ser feito no conjunto completo de dados ou com um scaler pré-treinado.
+            # Aqui, para simplicidade, um Min-Max por empresa pode não ser o ideal, mas demonstra a intenção.
+            
+            scaled_eva = eva_pct # Assume que já está em escala percentual comparável ou precisa de pré-escalonamento
+            scaled_efv = efv_pct
+            scaled_upside = upside
+            scaled_profitability = profitability_score
+            scaled_liquidity = liquidity_score # Pode ser necessário min-max scaler para cada um se as faixas forem muito diferentes
+            
+            final_score = (scaled_eva * criteria.eva_weight +
+                           scaled_efv * criteria.efv_weight +
+                           scaled_upside * criteria.upside_weight +
+                           scaled_profitability * criteria.profitability_weight +
+                           scaled_liquidity * criteria.liquidity_weight)
+            
+            processed_data.append({
+                'ticker': ticker,
+                'company_name': data.company_name,
+                'eva_pct': eva_pct,
+                'efv_pct': efv_pct,
+                'upside_pct': upside,
+                'profitability_score': profitability_score,
+                'liquidity_score': liquidity_score,
+                'final_score': final_score
+            })
+        
+        processed_data.sort(key=lambda x: x['final_score'], reverse=True)
+        return processed_data
+
+    def identify_opportunities(self, companies_data: Dict[str, CompanyFinancialData]) -> Dict[str, Any]:
+        """
+        Identifica oportunidades de investimento com base nas métricas de valor.
+        """
+        opportunities = {
+            'value_creators': [],
+            'growth_potential': [],
+            'undervalued': [],
+            'best_opportunities': [],
+            'clusters': {},
+            'sector_rankings': {}
+        }
+
+        all_metrics_df = self._prepare_data_for_ml(companies_data)
+        
+        if all_metrics_df.empty:
+            return opportunities
+
+        # Análise de Value Creators e Growth Potential
+        for _, row in all_metrics_df.iterrows():
+            if row['eva_pct'] > 0:
+                opportunities['value_creators'].append((row['ticker'], row['eva_pct']))
+            if row['efv_pct'] > 0:
+                opportunities['growth_potential'].append((row['ticker'], row['efv_pct']))
+            if row['upside_pct'] > 20: # Exemplo de threshold para subvalorizadas
+                opportunities['undervalued'].append((row['ticker'], row['upside_pct']))
+
+        all_metrics_df['simple_combined_score'] = (all_metrics_df['eva_pct'] * 0.4 + 
+                                                   all_metrics_df['efv_pct'] * 0.4 + 
+                                                   all_metrics_df['upside_pct'] * 0.2)
+        
+        top_companies = all_metrics_df.sort_values(by='simple_combined_score', ascending=False).head(5)
+        for _, row in top_companies.iterrows():
+            reason = []
+            if row['eva_pct'] > 0: reason.append('EVA Positivo')
+            if row['efv_pct'] > 0: reason.append('EFV Positivo')
+            if row['upside_pct'] > 0: reason.append('Upside')
+            opportunities['best_opportunities'].append((row['ticker'], ", ".join(reason), row['simple_combined_score']))
+
+        # Agrupamento (Clustering) - K-Means
+        features = all_metrics_df[['eva_pct', 'efv_pct', 'upside_pct', 'riqueza_atual', 'riqueza_futura']]
+        scaled_features = self.scaler.fit_transform(features)
+        
+        try:
+            kmeans = KMeans(n_clusters=3, random_state=42, n_init='auto') # n_init='auto' é compatível com versões recentes do sklearn
+            clusters = kmeans.fit_predict(scaled_features)
+            all_metrics_df['cluster'] = clusters
+
+            for cluster_id in sorted(all_metrics_df['cluster'].unique()):
+                cluster_companies = all_metrics_df[all_metrics_df['cluster'] == cluster_id]['ticker'].tolist()
+                opportunities['clusters'][f"Cluster {cluster_id + 1}"] = cluster_companies
+        except Exception as e:
+            logger.warning(f"Erro ao realizar clustering K-Means: {e}. Ignorando clustering nesta execução.")
+            opportunities['clusters']['Erro no Clustering'] = ["Não foi possível agrupar as empresas."]
+
+        # Ranking por Setor
+        sectors_map = get_market_sectors()
+        ticker_to_sector = {}
+        for sector, tickers in sectors_map.items():
+            for ticker in tickers:
+                ticker_to_sector[ticker] = sector
+        
+        all_metrics_df['sector'] = all_metrics_df['ticker'].map(ticker_to_sector)
+        
+        for sector_name in all_metrics_df['sector'].dropna().unique():
+            sector_df = all_metrics_df[all_metrics_df['sector'] == sector_name]
+            if not sector_df.empty:
+                sector_ranking = sector_df.sort_values(by='simple_combined_score', ascending=False)[['ticker', 'simple_combined_score']].values.tolist()
+                opportunities['sector_rankings'][sector_name] = sector_ranking
+                
+        return opportunities
+
+class PortfolioOptimizer:
+    """
+    Classe para sugestão e otimização de portfólio.
+    """
+    def __init__(self, calculator: FinancialMetricsCalculator):
+        self.calculator = calculator
+
+    def suggest_portfolio_allocation(self, companies_data: Dict[str, CompanyFinancialData], profile: str = 'moderate') -> Dict[str, float]:
+        """
+        Sugere uma alocação de portfólio baseada nas métricas de valor e perfil de risco.
+        """
+        processed_data = []
+        for ticker, data in companies_data.items():
+            eva_abs, eva_pct = self.calculator.calculate_eva(data)
+            efv_abs, efv_pct = self.calculator.calculate_efv(data)
+            upside = self.calculator.calculate_upside(data, efv_abs) if not np.isnan(efv_abs) else np.nan
+            
+            score = 0
+            if not np.isnan(eva_pct): score += eva_pct
+            if not np.isnan(efv_pct): score += efv_pct * 1.5
+            if not np.isnan(upside): score += upside
+            
+            processed_data.append({'ticker': ticker, 'score': score})
+        
+        df = pd.DataFrame(processed_data).replace([np.inf, -np.inf], np.nan).fillna(0)
+        
+        df = df.sort_values(by='score', ascending=False)
+        
+        total_score = df['score'].sum()
+        if total_score == 0:
+            return {c.ticker: 0.0 for c in companies_data.values()}
+
+        portfolio_weights = {}
+        if profile == 'conservative':
+            top_n = min(len(df), 5) 
+            total_top_score = df['score'].head(top_n).sum()
+            if total_top_score > 0:
+                for _, row in df.head(top_n).iterrows():
+                    portfolio_weights[row['ticker']] = (row['score'] / total_top_score) * 0.7
+                remaining_tickers = df.iloc[top_n:]
+                remaining_total_score = remaining_tickers['score'].sum()
+                if remaining_total_score > 0:
+                    for _, row in remaining_tickers.iterrows():
+                        portfolio_weights[row['ticker']] = (row['score'] / remaining_total_score) * 0.3
+            else:
+                for _, row in df.iterrows():
+                    portfolio_weights[row['ticker']] = 1 / len(df) if len(df) > 0 else 0
+        elif profile == 'aggressive':
+            top_n = min(len(df), 3)
+            total_top_score = df['score'].head(top_n).sum()
+            if total_top_score > 0:
+                for _, row in df.head(top_n).iterrows():
+                    portfolio_weights[row['ticker']] = (row['score'] / total_top_score) * 0.8
+                remaining_tickers = df.iloc[top_n:]
+                remaining_total_score = remaining_tickers['score'].sum()
+                if remaining_total_score > 0:
+                    for _, row in remaining_tickers.iterrows():
+                        portfolio_weights[row['ticker']] = (row['score'] / remaining_total_score) * 0.2
+            else:
+                for _, row in df.iterrows():
+                    portfolio_weights[row['ticker']] = 1 / len(df) if len(df) > 0 else 0
+        else: # Moderate (default)
+            for _, row in df.iterrows():
+                portfolio_weights[ticker] = row['score'] / total_score
+        
+        current_sum = sum(portfolio_weights.values())
+        if current_sum > 0:
+            for ticker_key in portfolio_weights:
+                portfolio_weights[ticker_key] /= current_sum
+        
+        return {k: round(v, 4) for k, v in portfolio_weights.items()}
+
+    def calculate_portfolio_eva(self, portfolio_weights: Dict[str, float], companies_data: Dict[str, CompanyFinancialData]) -> Tuple[float, float]:
+        """
+        Calcula o EVA (absoluto e percentual) de um portfólio.
+        """
+        total_portfolio_eva_abs = 0.0
+        total_portfolio_capital_employed = 0.0
+
+        for ticker, weight in portfolio_weights.items():
+            if ticker in companies_data:
+                company_data = companies_data[ticker]
+                eva_abs, _ = self.calculator.calculate_eva(company_data)
+                capital_employed = self.calculator._calculate_capital_employed(company_data)
+                
+                if not np.isnan(eva_abs) and not np.isnan(capital_employed):
+                    total_portfolio_eva_abs += eva_abs * weight
+                    total_portfolio_capital_employed += capital_employed * weight
+        
+        if total_portfolio_capital_employed > 0:
+            portfolio_eva_pct = (total_portfolio_eva_abs / total_portfolio_capital_employed) * 100
+        else:
+            portfolio_eva_pct = np.nan
+
+        return total_portfolio_eva_abs, portfolio_eva_pct

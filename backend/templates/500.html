@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Erro do Servidor | Model Fleuriet</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #fff5f5 0%, #fed7d7 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .error-container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            text-align: center;
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        .error-code {
+            font-size: 120px;
+            font-weight: 800;
+            color: #e53e3e;
+            line-height: 1;
+            margin-bottom: 20px;
+        }
+        
+        .error-title {
+            font-size: 32px;
+            color: #2d3748;
+            margin-bottom: 15px;
+        }
+        
+        .error-message {
+            font-size: 18px;
+            color: #718096;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        
+        .home-btn {
+            display: inline-block;
+            background: #e53e3e;
+            color: white;
+            padding: 12px 30px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            box-shadow: 0 4px 15px rgba(229, 62, 62, 0.3);
+        }
+        
+        .home-btn:hover {
+            background: #c53030;
+            transform: translateY(-3px);
+            box-shadow: 0 7px 20px rgba(229, 62, 62, 0.4);
+        }
+        
+        .logo {
+            margin-bottom: 25px;
+        }
+        
+        .logo img {
+            height: 50px;
+        }
+        
+        .illustration {
+            margin: 30px 0;
+        }
+        
+        .illustration svg {
+            max-width: 250px;
+            height: auto;
+        }
+
+        .contact-info {
+            margin-top: 20px;
+            font-size: 16px;
+            color: #4a5568;
+        }
+
+        @media (max-width: 480px) {
+            .error-container {
+                padding: 30px 20px;
+            }
+            
+            .error-code {
+                font-size: 90px;
+            }
+            
+            .error-title {
+                font-size: 26px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="logo">
+            <h2>Model Fleuriet</h2>
+        </div>
+        
+        <div class="illustration">
+            <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="100" cy="100" r="80" fill="#FFEBEE" />
+                <circle cx="80" cy="80" r="10" fill="#e53e3e" />
+                <circle cx="120" cy="80" r="10" fill="#e53e3e" />
+                <path d="M60 130 Q100 170 140 130" stroke="#e53e3e" stroke-width="8" fill="none" stroke-linecap="round" />
+                <path d="M100 20 L120 60 L160 60 L130 90 L140 130 L100 110 L60 130 L70 90 L40 60 L80 60 Z" 
+                      fill="#FFD166" stroke="#FFB400" stroke-width="2" />
+                <line x1="60" y1="60" x2="140" y2="140" stroke="#e53e3e" stroke-width="8" stroke-linecap="round" />
+                <line x1="140" y1="60" x2="60" y2="140" stroke="#e53e3e" stroke-width="8" stroke-linecap="round" />
+            </svg>
+        </div>
+        
+        <div class="error-code">500</div>
+        <h1 class="error-title">Erro Interno do Servidor</h1>
+        <p class="error-message">Ocorreu um erro inesperado no servidor. Nossa equipe já foi notificada e está trabalhando para resolver o problema.</p>
+        
+        <div class="contact-info">
+            <p>Se o problema persistir, entre em contato:</p>
+            <p><strong>suporte@modelfleuriet.com</strong></p>
+        </div>
+        
+        <a href="/" class="home-btn">Tentar Novamente</a>
+    </div>
+</body>
+</html>
