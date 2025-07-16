@@ -61,7 +61,7 @@ from ibovespa_utils import get_ibovespa_tickers
 
 # --- Inicialização da Aplicação Flask ---
 # Define o caminho para a pasta de build do frontend (React/Vite). O padrão do Vite é 'dist'.
-FRONTEND_BUILD_PATH = os.path.join(PROJECT_ROOT, 'frontend', 'dist')
+FRONTEND_BUILD_PATH = os.path.join(PROJECT_ROOT, 'dist')
 logger.info(f"Configurando pasta estática para servir frontend de: {FRONTEND_BUILD_PATH}")
 
 # Inicializa o Flask com o caminho estático correto.
