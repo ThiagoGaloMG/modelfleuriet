@@ -64,7 +64,8 @@ from ibovespa_utils import get_ibovespa_tickers
 # Como este script está em /backend, precisamos "subir um nível" (../) para
 # encontrar a pasta 'dist' que o Vite cria na raiz do projeto.
 # ==============================================================================
-FRONTEND_BUILD_PATH = os.path.abspath(os.path.join(PROJECT_ROOT, '..', 'dist'))
+# O Flask agora procurará os arquivos estáticos em uma pasta 'public' dentro do próprio 'backend'.
+FRONTEND_BUILD_PATH = os.path.join(PROJECT_ROOT, 'public')
 
 logger.info(f"Configurando pasta estática para servir frontend de: {FRONTEND_BUILD_PATH}")
 
