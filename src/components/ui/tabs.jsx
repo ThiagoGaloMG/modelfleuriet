@@ -1,6 +1,6 @@
 // modelfleuriet/frontend/src/components/ui/tabs.jsx
-import *s React from 'react';
-import *s TabsPrimitive from '@radix-ui/react-tabs';
+import * as React from 'react';
+import * as TabsPrimitive from '@radix-ui/react-tabs';
 import { cn } from '../../lib/utils.js';
 
 const Tabs = TabsPrimitive.Root;
