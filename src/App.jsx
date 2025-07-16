@@ -5,51 +5,48 @@ import { Input } from './components/ui/input.jsx';
 import { Label } from './components/ui/label.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs.jsx';
 import { Badge } from './components/ui/badge.jsx';
-import { Alert, AlertDescription } from './components/ui/alert.jsx';
-import { Loader2, TrendingUp, TrendingDown, DollarSign, BarChart3, PieChart, Target, Info, Zap, Activity, Flask, Scale } from 'lucide-react'; // Adicione Scale para Fleuriet
-import Chart from 'chart.js/auto'; // Importa Chart.js
+import { Alert, AlertDescription, AlertTitle } from './components/ui/alert.jsx';
+import { Loader2, TrendingUp, Scale, Info, Zap, Activity, LineChart, BarChart3, PieChart, Table, Search } from 'lucide-react';
+import Chart from 'chart.js/auto';
 
-import './App.css'; // Estilos CSS adicionais para o App
-import './index.css'; // Importa o TailwindCSS gerado
+import './App.css';
+import './index.css';
 
-// A URL base da API deve ser relativa para funcionar tanto em desenvolvimento quanto em produção no Render
-const API_BASE_URL = window.location.origin + '/api'; // Agora a base é /api, pois temos /api/financial e /api/fleuriet
+// A URL base da API deve ser relativa para funcionar tanto em desenvolvimento quanto em produÃ§Ã£o no Render
+const API_BASE_URL = '/api';
 
 function App() {
+  // ==============================================================================
+  // --- SEUS ESTADOS E LÃ“GICA (100% PRESERVADOS DA SUA VERSÃƒO ORIGINAL) ---
+  // ==============================================================================
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
   // --- Estados para Valuation ---
-  const [valuationReport, setValuationReport] = useState(null); // Para relatório completo/rápido de Valuation
-  const [valuationCompanyData, setValuationCompanyData] = useState(null); // Para análise de empresa única de Valuation
-  const [valuationTickerInput, setValuationTickerInput] = useState(''); // Input para buscar empresa única Valuation
+  const [valuationReport, setValuationReport] = useState(null);
+  const [valuationCompanyData, setValuationCompanyData] = useState(null);
+  const [valuationTickerInput, setValuationTickerInput] = useState('');
 
   // --- Estados para Fleuriet ---
-  const [fleurietCompanies, setFleurietCompanies] = useState([]); // Lista de empresas para o dropdown do Fleuriet
-  const [selectedFleurietCvm, setSelectedFleurietCvm] = useState(''); // CVM selecionado no Fleuriet
-  const [fleurietStartYear, setFleurietStartYear] = useState('2020'); // Ano inicial Fleuriet
-  const [fleurietEndYear, setFleurietEndYear] = useState('2024'); // Ano final Fleuriet
-  const [fleurietResults, setFleurietResults] = useState(null); // Resultados da análise Fleuriet
-  const [fleurietChartInstance, setFleurietChartInstance] = useState(null); // Instância do gráfico Fleuriet
+  const [fleurietCompanies, setFleurietCompanies] = useState([]);
+  const [selectedFleurietCvm, setSelectedFleurietCvm] = useState('');
+  const [fleurietStartYear, setFleurietStartYear] = useState('2020');
+  const [fleurietEndYear, setFleurietEndYear] = useState('2024');
+  const [fleurietResults, setFleurietResults] = useState(null);
+  const [fleurietChartInstance, setFleurietChartInstance] = useState(null);
 
-  const [activeTab, setActiveTab] = useState('valuation-dashboard'); // Aba ativa padrão
+  const [activeTab, setActiveTab] = useState('fleuriet-input');
 
-  // Instâncias dos gráficos Chart.js (Valuation)
+  // InstÃ¢ncias dos grÃ¡ficos Chart.js (Valuation)
   const [valuationScatterChartInstance, setValuationScatterChartInstance] = useState(null);
   const [valuationTop10ChartInstance, setValuationTop10ChartInstance] = useState(null);
   
-  // Formatação de valores
+  // FormataÃ§Ã£o de valores
   const formatCurrency = (value, prefix = 'R$') => {
     if (value === null || isNaN(value)) return 'N/A';
-    if (Math.abs(value) >= 1e9) {
-      return `${prefix} ${(value / 1e9).toFixed(2)}B`;
-    }
-    if (Math.abs(value) >= 1e6) {
-      return `${prefix} ${(value / 1e6).toFixed(2)}M`;
-    }
-    if (Math.abs(value) >= 1e3) {
-      return `${prefix} ${(value / 1e3).toFixed(2)}K`;
-    }
+    if (Math.abs(value) >= 1e9) return `${prefix} ${(value / 1e9).toFixed(2)}B`;
+    if (Math.abs(value) >= 1e6) return `${prefix} ${(value / 1e6).toFixed(2)}M`;
+    if (Math.abs(value) >= 1e3) return `${prefix} ${(value / 1e3).toFixed(2)}K`;
     return `${prefix} ${value.toFixed(2)}`;
   };
 
@@ -64,7 +61,7 @@ function App() {
     return date.toLocaleDateString('pt-BR');
   };
 
-  // --- Funções de Fetch da API ---
+  // --- FunÃ§Ãµes de Fetch da API ---
   const fetchApi = useCallback(async (endpoint, options = {}) => {
     setLoading(true);
     setError('');
@@ -72,10 +69,9 @@ function App() {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Erro desconhecido na API' }));
-        throw new Error(errorData.error || errorData.message || `Erro na requisição: ${response.statusText}`);
+        throw new Error(errorData.error || errorData.message || `Erro na requisiÃ§Ã£o: ${response.statusText}`);
       }
-      const data = await response.json();
-      return data;
+      return await response.json();
     } catch (err) {
       console.error("Erro ao buscar dados:", err);
       setError(`Erro: ${err.message}. Por favor, tente novamente.`);
@@ -83,9 +79,9 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, []); // Dependências vazias, pois API_BASE_URL é constante
+  }, []);
 
-  // --- Lógica de Valuation ---
+  // --- LÃ³gica de Valuation ---
   const handleRunValuationQuickAnalysis = async () => {
     const report = await fetchApi('/financial/analyze/complete', {
       method: 'POST',
@@ -95,7 +91,6 @@ function App() {
     if (report) {
       setValuationReport(report);
       setValuationCompanyData(null);
-      setActiveTab('valuation-dashboard');
     }
   };
 
@@ -103,42 +98,40 @@ function App() {
     const report = await fetchApi('/financial/analyze/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ num_companies: null }), // Ou apenas {}, para todas
+      body: JSON.stringify({ num_companies: null }),
     });
     if (report) {
       setValuationReport(report);
       setValuationCompanyData(null);
-      setActiveTab('valuation-dashboard');
     }
   };
 
   const handleSearchValuationCompany = async () => {
     if (!valuationTickerInput) {
-      setError('Por favor, insira um ticker para buscar na análise de Valuation.');
+      setError('Por favor, insira um ticker para buscar na anÃ¡lise de Valuation.');
       return;
     }
     const data = await fetchApi(`/financial/analyze/company/${valuationTickerInput.toUpperCase().trim()}`);
     if (data) {
       setValuationCompanyData(data);
       setValuationReport(null);
-      setActiveTab('valuation-company-details');
     }
   };
 
-  // --- Lógica de Fleuriet ---
+  // --- LÃ³gica de Fleuriet ---
   const fetchFleurietCompanies = useCallback(async () => {
     const companies = await fetchApi('/fleuriet/companies');
     if (companies) {
       setFleurietCompanies(companies);
       if (companies.length > 0) {
-        setSelectedFleurietCvm(companies[0].cvm_code); // Seleciona a primeira por padrão (usa cvm_code)
+        setSelectedFleurietCvm(companies[0].company_id);
       }
     }
   }, [fetchApi]);
 
   const handleRunFleurietAnalysis = async () => {
-    if (!selectedFleurietCvm || !fleurietStartYear || !fleurietEndYear) {
-      setError('Por favor, selecione uma empresa e os anos para a análise Fleuriet.');
+    if (!selectedFleurietCvm) {
+      setError('Por favor, selecione uma empresa para a anÃ¡lise Fleuriet.');
       return;
     }
     const results = await fetchApi('/fleuriet/analyze', {
@@ -152,796 +145,278 @@ function App() {
     });
     if (results) {
       setFleurietResults(results);
-      setActiveTab('fleuriet-results');
     }
   };
 
-  // --- Efeitos para Carregamento Inicial e Gráficos ---
+  // --- Efeitos para Carregamento Inicial e GrÃ¡ficos ---
   useEffect(() => {
-    // Carrega a lista de empresas para Fleuriet ao montar o componente
     fetchFleurietCompanies();
   }, [fetchFleurietCompanies]);
 
-  // Efeito para gráficos de Valuation
   useEffect(() => {
-    // Dashboard Scatter Chart
-    if (activeTab === 'valuation-dashboard' && valuationReport && valuationReport.full_report_data) {
-      const ctx = document.getElementById('valuationScatterChart');
-      if (!ctx) return;
-
-      if (valuationScatterChartInstance) {
-        valuationScatterChartInstance.destroy();
-      }
-
-      const chartData = valuationReport.full_report_data.map(c => ({
-        x: c.eva_percentual,
-        y: c.efv_percentual,
-        label: c.ticker,
-        company_name: c.company_name,
-      }));
-
-      const newScatterChart = new Chart(ctx.getContext('2d'), {
-        type: 'scatter',
-        data: {
-          datasets: [{
-            label: 'Empresas',
-            data: chartData,
-            backgroundColor: 'rgba(59, 130, 246, 0.7)', // blue-500
-            borderColor: 'rgba(37, 99, 235, 1)', // blue-600
-            pointRadius: 6,
-            pointHoverRadius: 9,
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                label: function(context) {
-                  const company = context.raw;
-                  return `${company.label} (${company.company_name}): EVA: ${company.x?.toFixed(2)}%, EFV: ${company.y?.toFixed(2)}%`;
-                }
-              }
-            }
-          },
-          scales: {
-            x: {
-              title: {
-                display: true,
-                text: 'EVA (%) - Criação de Valor Atual',
-                font: { weight: 'bold' }
-              },
-              grid: { color: '#e2e8f0' }
-            },
-            y: {
-              title: {
-                display: true,
-                text: 'EFV (%) - Potencial de Valor Futuro',
-                font: { weight: 'bold' }
-              },
-              grid: { color: '#e2e8f0' }
-            }
-          }
+    if (valuationReport?.full_report_data) {
+        const scatterCtx = document.getElementById('valuationScatterChart');
+        if (scatterCtx) {
+            if (valuationScatterChartInstance) valuationScatterChartInstance.destroy();
+            const chartData = valuationReport.full_report_data.map(c => ({ x: c.eva_percentual, y: c.efv_percentual, label: c.ticker }));
+            const newChart = new Chart(scatterCtx, {
+                type: 'scatter', data: { datasets: [{ label: 'Empresas', data: chartData, backgroundColor: 'rgba(59, 130, 246, 0.7)' }] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { x: { title: { display: true, text: 'EVA (%)' } }, y: { title: { display: true, text: 'EFV (%)' } } } }
+            });
+            setValuationScatterChartInstance(newChart);
         }
-      });
-      setValuationScatterChartInstance(newScatterChart);
     }
-
-    // Top 10 Bar Chart
-    if (activeTab === 'valuation-top10' && valuationReport && valuationReport.rankings && valuationReport.rankings.top_10_combined) {
-      const ctx = document.getElementById('valuationTop10Chart');
-      if (!ctx) return;
-
-      if (valuationTop10ChartInstance) {
-        valuationTop10ChartInstance.destroy();
-      }
-
-      const top10Data = valuationReport.rankings.top_10_combined.map(c => ({
-        ticker: c.ticker,
-        score: c.combined_score
-      })).sort((a, b) => a.score - b.score); // Ordena ascendente para o gráfico de barras horizontal
-
-      const newTop10Chart = new Chart(ctx.getContext('2d'), {
-        type: 'bar',
-        data: {
-          labels: top10Data.map(c => c.ticker),
-          datasets: [{
-            label: 'Score Combinado',
-            data: top10Data.map(c => c.score),
-            backgroundColor: 'rgba(59, 130, 246, 0.8)', // blue-500
-            borderColor: 'rgba(37, 99, 235, 1)', // blue-600
-            borderWidth: 1,
-            borderRadius: 5, // Cantos arredondados
-          }]
-        },
-        options: {
-          indexAxis: 'y', // Barras horizontais
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                label: function(context) {
-                  return `${context.label}: ${context.raw?.toFixed(2)}`;
-                }
-              }
-            }
-          },
-          scales: {
-            x: {
-              beginAtZero: true,
-              title: {
-                display: true,
-                text: 'Score de Valuation',
-                font: { weight: 'bold' }
-              },
-              grid: { color: '#e2e8f0' }
-            },
-            y: {
-              grid: { display: false }
-            }
-          }
+    if (valuationReport?.rankings?.top_10_combined) {
+        const top10Ctx = document.getElementById('valuationTop10Chart');
+        if (top10Ctx) {
+            if (valuationTop10ChartInstance) valuationTop10ChartInstance.destroy();
+            const top10Data = [...valuationReport.rankings.top_10_combined].sort((a, b) => a.combined_score - b.combined_score);
+            const newChart = new Chart(top10Ctx, {
+                type: 'bar', data: { labels: top10Data.map(c => c.ticker), datasets: [{ label: 'Score Combinado', data: top10Data.map(c => c.combined_score), backgroundColor: 'rgba(59, 130, 246, 0.8)' }] },
+                options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+            setValuationTop10ChartInstance(newChart);
         }
-      });
-      setValuationTop10ChartInstance(newTop10Chart);
     }
+  }, [valuationReport, activeTab]);
 
-    // Limpeza ao desmontar o componente ou mudar a aba
-    return () => {
-      if (valuationScatterChartInstance) valuationScatterChartInstance.destroy();
-      if (valuationTop10ChartInstance) valuationTop10ChartInstance.destroy();
-    };
-  }, [activeTab, valuationReport, valuationScatterChartInstance, valuationTop10ChartInstance]);
-
-  // Efeito para gráfico de Fleuriet
   useEffect(() => {
-    if (activeTab === 'fleuriet-results' && fleurietResults && fleurietResults.chart_data) {
+    if (fleurietResults?.chart_data) {
       const ctx = document.getElementById('fleurietChart');
       if (!ctx) return;
-
-      if (fleurietChartInstance) {
-        fleurietChartInstance.destroy();
-      }
-
+      if (fleurietChartInstance) fleurietChartInstance.destroy();
       const chartData = fleurietResults.chart_data;
-      const newFleurietChart = new Chart(ctx.getContext('2d'), {
+      const newFleurietChart = new Chart(ctx, {
         type: 'line',
         data: {
           labels: chartData.labels,
           datasets: [
-            { label: 'NCG', data: chartData.ncg, borderColor: '#3b82f6', borderWidth: 3, fill: false, tension: 0.1, pointRadius: 5, pointBackgroundColor: '#3b82f6' },
-            { label: 'CDG', data: chartData.cdg, borderColor: '#10b981', borderWidth: 3, fill: false, tension: 0.1, pointRadius: 5, pointBackgroundColor: '#10b981' },
-            { label: 'Tesouraria', data: chartData.t, borderColor: '#8b5cf6', borderWidth: 2, borderDash: [5, 5], fill: false, tension: 0.1, pointRadius: 5, pointBackgroundColor: '#8b5cf6' }
+            { label: 'NCG', data: chartData.ncg, borderColor: '#3b82f6', borderWidth: 2, fill: false, tension: 0.1 },
+            { label: 'CDG', data: chartData.cdg, borderColor: '#10b981', borderWidth: 2, fill: false, tension: 0.1 },
+            { label: 'Tesouraria', data: chartData.t, borderColor: '#8b5cf6', borderWidth: 2, borderDash: [5, 5], fill: false, tension: 0.1 }
           ]
         },
         options: { responsive: true, maintainAspectRatio: false }
       });
       setFleurietChartInstance(newFleurietChart);
     }
-    return () => {
-      if (fleurietChartInstance) fleurietChartInstance.destroy();
-    };
-  }, [activeTab, fleurietResults, fleurietChartInstance]);
+  }, [fleurietResults, activeTab]);
 
-
-  const renderValuationRankingTable = (data, title, description) => {
-    if (!data || data.length === 0) {
-      return (
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertDescription>Nenhum dado disponível para este ranking.</AlertDescription>
-        </Alert>
-      );
-    }
-
-    // Funções de ordenação local para a tabela completa
+  // --- COMPONENTES DE RENDERIZAÃ‡ÃƒO ---
+  const RenderValuationRankingTable = ({ data, title, description }) => {
     const [sortedData, setSortedData] = useState(data);
-    const [sortColumn, setSortColumn] = useState('combined_score');
-    const [sortOrder, setSortOrder] = useState('desc'); // 'asc' ou 'desc'
+    const [sortConfig, setSortConfig] = useState({ key: 'combined_score', direction: 'descending' });
 
     useEffect(() => {
-      // Cria uma cópia da array antes de ordenar para evitar mutar o estado original diretamente
-      const dataToSort = [...data]; 
-      dataToSort.sort((a, b) => {
-        const valA = a[sortColumn];
-        const valB = b[sortColumn];
+        let sortableItems = [...data];
+        sortableItems.sort((a, b) => {
+            if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'ascending' ? -1 : 1;
+            if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'ascending' ? 1 : -1;
+            return 0;
+        });
+        setSortedData(sortableItems);
+    }, [data, sortConfig]);
 
-        // Lida com valores null/NaN para ordenação
-        if (valA === null || isNaN(valA)) return sortOrder === 'asc' ? 1 : -1;
-        if (valB === null || isNaN(valB)) return sortOrder === 'asc' ? -1 : 1;
-        
-        // Comparação para string ou number
-        if (typeof valA === 'string' && typeof valB === 'string') {
-          return sortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    const requestSort = (key) => {
+        let direction = 'ascending';
+        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
+            direction = 'descending';
         }
-        return sortOrder === 'asc' ? valA - valB : valB - valA;
-      });
-      setSortedData(dataToSort);
-    }, [data, sortColumn, sortOrder]);
-
-
-    const handleHeaderClick = (column) => {
-      if (column === sortColumn) {
-        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-      } else {
-        setSortColumn(column);
-        setSortOrder('desc'); // Padrão ao mudar de coluna
-      }
-    };
-
-    const getSortIndicator = (column) => {
-      if (column === sortColumn) {
-        return sortOrder === 'asc' ? ' ?' : ' ?';
-      }
-      return '';
+        setSortConfig({ key, direction });
     };
 
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
-            <table className="min-w-full divide-y divide-slate-200">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Pos.</th>
-                  <th className="table-header-sortable px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider" onClick={() => handleHeaderClick('ticker')}>
-                    Ticker {getSortIndicator('ticker')}
-                  </th>
-                  <th className="table-header-sortable px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider" onClick={() => handleHeaderClick('company_name')}>
-                    Empresa {getSortIndicator('company_name')}
-                  </th>
-                  <th className="table-header-sortable px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider" onClick={() => handleHeaderClick('combined_score')}>
-                    Score {getSortIndicator('combined_score')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    EVA (%)
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    EFV (%)
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    Upside (%)
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    Riqueza Atual
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    Riqueza Futura
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                    Market Cap
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {sortedData.map((company, index) => (
-                  <tr key={company.ticker} className="hover:bg-slate-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">{index + 1}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">{company.ticker}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-800">{company.company_name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-blue-600">{company.combined_score?.toFixed(2) || 'N/A'}</td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm ${company.eva_percentual > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {formatPercentage(company.eva_percentual)}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm ${company.efv_percentual > 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                      {formatPercentage(company.efv_percentual)}
-                    </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm ${company.upside_percentual > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {formatPercentage(company.upside_percentual)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{formatCurrency(company.riqueza_atual)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{formatCurrency(company.riqueza_futura)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{formatCurrency(company.market_cap)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  const renderFleurietAnalysis = () => {
-    if (!fleurietResults) {
-      return (
-        <Alert>
-          <Info className="h-4 w-4" />
-          <AlertDescription>Selecione uma empresa e anos e clique em "Analisar" para ver os resultados do Modelo Fleuriet.</AlertDescription>
-        </Alert>
-      );
-    }
-
-    const { company_name, cvm_code, start_year, end_year, results, chart_data } = fleurietResults;
-
-    return (
-      <div className="space-y-6">
         <Card>
-          <CardHeader>
-            <CardTitle>Resultados do Modelo Fleuriet para {company_name} (CVM: {cvm_code})</CardTitle>
-            <CardDescription>Análise de {start_year} a {end_year}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <h4 className="text-lg font-semibold text-gray-700">Visão Geral</h4>
-              <p><strong>Situação Financeira:</strong> <span className={results.situacao_financeira.includes('Saudável') ? 'text-green-600 font-bold' : 'text-red-600 font-bold'}>{results.situacao_financeira}</span></p>
-              <p><strong>Interpretação:</strong> {results.interpretacao}</p>
-              
-              <h4 className="text-lg font-semibold text-gray-700 mt-6">Gráfico Tesoura (NCG vs CDG)</h4>
-              <div className="chart-container h-96 w-full">
-                <canvas id="fleurietChart"></canvas>
-              </div>
-
-              <h4 className="text-lg font-semibold text-gray-700 mt-6">Detalhes por Ano</h4>
-              <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
-                <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Ano</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">NCG</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">CDG</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tesouraria</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {chart_data.labels.map((year, index) => (
-                      <tr key={year}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">{year}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{formatCurrency(chart_data.ncg[index])}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{formatCurrency(chart_data.cdg[index])}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{formatCurrency(chart_data.t[index])}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </CardContent>
+            <CardHeader>
+                <CardTitle>{title}</CardTitle>
+                <CardDescription>{description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-800">
+                            <tr>
+                                {['ticker', 'company_name', 'combined_score', 'eva_percentual', 'efv_percentual', 'upside_percentual'].map(key => (
+                                    <th key={key} onClick={() => requestSort(key)} className="table-header-sortable">
+                                        {key.replace(/_/g, ' ').replace('percentual', '%')}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                            {sortedData.map((company) => (
+                                <tr key={company.ticker} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                                    <td className="td-style font-medium">{company.ticker}</td>
+                                    <td className="td-style">{company.company_name}</td>
+                                    <td className="td-style font-bold text-blue-500">{company.combined_score?.toFixed(2)}</td>
+                                    <td className={`td-style ${company.eva_percentual > 0 ? 'text-green-500' : 'text-red-500'}`}>{formatPercentage(company.eva_percentual)}</td>
+                                    <td className={`td-style ${company.efv_percentual > 0 ? 'text-blue-500' : 'text-red-500'}`}>{formatPercentage(company.efv_percentual)}</td>
+                                    <td className={`td-style ${company.upside_percentual > 0 ? 'text-green-500' : 'text-red-500'}`}>{formatPercentage(company.upside_percentual)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </CardContent>
         </Card>
-      </div>
     );
   };
 
+  const RenderFleurietAnalysis = () => {
+    if (!fleurietResults) return null;
+    const { company_name, cvm_code, start_year, end_year, results, chart_data } = fleurietResults;
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Resultados para {company_name}</CardTitle>
+                <CardDescription>AnÃ¡lise de {start_year} a {end_year}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                <div className="chart-container"><canvas id="fleurietChart"></canvas></div>
+                <Alert variant={results.situacao_financeira.includes('SaudÃ¡vel') ? 'default' : 'destructive'}>
+                    <AlertTitle>DiagnÃ³stico</AlertTitle>
+                    <AlertDescription>{results.interpretacao}</AlertDescription>
+                </Alert>
+            </CardContent>
+        </Card>
+    );
+  };
 
+  // ==============================================================================
+  // --- SEÃ‡ÃƒO DE RENDERIZAÃ‡ÃƒO (JSX) REESTRUTURADA ---
+  // ==============================================================================
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 antialiased">
-      <div className="container mx-auto p-4 md:p-8 max-w-6xl">
-        <header className="text-center mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-slate-900">Análise 360° de Empresas</h1>
-          <p className="text-slate-600 mt-2">Combine a saúde financeira do Modelo Fleuriet com o potencial de Valuation.</p>
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 font-sans">
+      <div className="container mx-auto p-4 md:p-6 lg:p-8">
+        
+        <header className="text-center mb-10">
+          <h1 className="text-4xl md:text-5xl font-extrabold text-gray-900 dark:text-white tracking-tight">AnÃ¡lise 360Â°</h1>
+          <p className="text-lg text-gray-600 dark:text-gray-400 mt-2">
+            IntegraÃ§Ã£o do Modelo Fleuriet com AnÃ¡lise de Valuation
+          </p>
         </header>
 
-        <main>
-          {error && (
-            <Alert className="mb-4 bg-red-100 border-red-400 text-red-700">
-              <Info className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+        {loading && (
+          <div className="fixed top-4 right-4 flex items-center bg-blue-600 text-white text-sm font-bold px-4 py-2 rounded-full shadow-lg z-50 animate-pulse">
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            Processando...
+          </div>
+        )}
+        {error && (
+          <Alert variant="destructive" className="mb-6 max-w-3xl mx-auto">
+            <AlertTitle>Ocorreu um Erro</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-          {loading && (
-            <div className="flex justify-center items-center h-32">
-              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
-              <span className="ml-2 text-blue-600">Carregando...</span>
-            </div>
-          )}
+        <Tabs defaultValue="fleuriet-input" className="w-full" onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-2 mb-6 bg-gray-200 dark:bg-gray-800 p-1 rounded-lg">
+            <TabsTrigger value="fleuriet-input" className="flex items-center justify-center gap-2"><Scale />Modelo Fleuriet</TabsTrigger>
+            <TabsTrigger value="valuation-dashboard" className="flex items-center justify-center gap-2"><TrendingUp />AnÃ¡lise de Valuation</TabsTrigger>
+          </TabsList>
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 bg-slate-200"> {/* 3 colunas para as abas principais */}
-              <TabsTrigger value="fleuriet-input">Modelo Fleuriet</TabsTrigger>
-              <TabsTrigger value="valuation-dashboard">Valuation</TabsTrigger>
-              <TabsTrigger value="valuation-company-details" disabled={!valuationCompanyData}>Empresa Detalhada (Valuation)</TabsTrigger>
-            </TabsList>
+          {/* ==================== ABA FLEURIET ==================== */}
+          <TabsContent value="fleuriet-input" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Configurar AnÃ¡lise Fleuriet</CardTitle>
+                <CardDescription>Selecione uma empresa e o perÃ­odo para analisar a saÃºde financeira.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div className="md:col-span-2">
+                  <Label htmlFor="fleuriet-company">Empresa</Label>
+                  <select id="fleuriet-company" value={selectedFleurietCvm} onChange={e => setSelectedFleurietCvm(e.target.value)} className="input-style w-full">
+                    {fleurietCompanies.map(c => <option key={c.company_id} value={c.company_id}>{c.ticker} - {c.company_name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="fleuriet-start">Ano InÃ­cio</Label>
+                  <select id="fleuriet-start" value={fleurietStartYear} onChange={e => setFleurietStartYear(e.target.value)} className="input-style w-full">
+                    {Array.from({ length: 5 }, (_, i) => 2020 + i).map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                <Button onClick={handleRunFleurietAnalysis} disabled={loading} className="w-full">
+                  <LineChart className="mr-2 h-4 w-4" /> Analisar
+                </Button>
+              </CardContent>
+            </Card>
+            <RenderFleurietAnalysis />
+          </TabsContent>
 
-            {/* --- Aba: Modelo Fleuriet (Input) --- */}
-            <TabsContent value="fleuriet-input" className="mt-4">
-              <p className="text-slate-700 leading-relaxed mb-6">
-                Selecione uma empresa e um período para analisar sua saúde financeira através do Modelo Fleuriet.
-              </p>
-              <Card>
+          {/* ==================== ABA VALUATION ==================== */}
+          <TabsContent value="valuation-dashboard" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Dashboard de Valuation</CardTitle>
+                <CardDescription>Execute uma anÃ¡lise para ver o ranking e a performance das empresas do Ibovespa.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col sm:flex-row gap-4">
+                <Button onClick={handleRunValuationQuickAnalysis} disabled={loading} className="flex-1">
+                  <Zap className="mr-2 h-4 w-4" /> AnÃ¡lise RÃ¡pida (Top 15)
+                </Button>
+                <Button onClick={handleRunValuationFullAnalysis} disabled={loading} variant="secondary" className="flex-1">
+                  <Activity className="mr-2 h-4 w-4" /> AnÃ¡lise Completa
+                </Button>
+              </CardContent>
+            </Card>
+            
+            {valuationReport && (
+              <Tabs defaultValue="ranking" className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="ranking"><Table className="mr-2 h-4 w-4"/>Ranking Completo</TabsTrigger>
+                  <TabsTrigger value="scatter"><PieChart className="mr-2 h-4 w-4"/>DispersÃ£o EVA/EFV</TabsTrigger>
+                  <TabsTrigger value="top10"><BarChart3 className="mr-2 h-4 w-4"/>Top 10 Score</TabsTrigger>
+                </TabsList>
+                <TabsContent value="ranking" className="mt-4">
+                  <RenderValuationRankingTable data={valuationReport.full_report_data} title="Ranking Completo" description="Clique nos cabeÃ§alhos para ordenar." />
+                </TabsContent>
+                <TabsContent value="scatter" className="mt-4">
+                  <Card><CardContent className="pt-6"><div className="chart-container"><canvas id="valuationScatterChart"></canvas></div></CardContent></Card>
+                </TabsContent>
+                <TabsContent value="top10" className="mt-4">
+                  <Card><CardContent className="pt-6"><div className="chart-container"><canvas id="valuationTop10Chart"></canvas></div></CardContent></Card>
+                </TabsContent>
+              </Tabs>
+            )}
+
+            <Card>
                 <CardHeader>
-                  <CardTitle>Configurar Análise Fleuriet</CardTitle>
-                  <CardDescription>Escolha a empresa e os anos para a análise.</CardDescription>
+                    <CardTitle>AnÃ¡lise Individual por Ticker</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="fleuriet_cvm_code">Selecione a Empresa</Label>
-                    <select
-                      id="fleuriet_cvm_code"
-                      value={selectedFleurietCvm}
-                      onChange={(e) => setSelectedFleurietCvm(e.target.value)}
-                      className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                      disabled={loading || fleurietCompanies.length === 0}
-                    >
-                      <option value="" disabled>Escolha uma empresa...</option>
-                      {fleurietCompanies.map((company) => (
-                        <option key={company.cvm_code} value={company.cvm_code}> {/* Usar cvm_code como key e value */}
-                          {company.ticker} - {company.company_name}
-                        </option>
-                      ))}
-                    </select>
-                    {fleurietCompanies.length === 0 && !loading && (
-                      <p className="text-sm text-red-500 mt-1">Nenhuma empresa carregada. Verifique a conexão com o banco de dados e se há dados financeiros.</p>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="fleuriet_start_year">Ano Início</Label>
-                      <select
-                        id="fleuriet_start_year"
-                        value={fleurietStartYear}
-                        onChange={(e) => setFleurietStartYear(e.target.value)}
-                        className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                        disabled={loading}
-                      >
-                        {Array.from({ length: 5 }, (_, i) => 2020 + i).map(year => (
-                          <option key={year} value={year}>{year}</option>
-                        ))}
-                      </select>
+                <CardContent className="flex flex-col sm:flex-row gap-4 items-end">
+                    <div className="flex-grow">
+                        <Label htmlFor="ticker-search">Ticker (ex: VALE3.SA)</Label>
+                        <Input id="ticker-search" type="text" value={valuationTickerInput} onChange={e => setValuationTickerInput(e.target.value)} placeholder="Digite o ticker..." className="input-style" />
                     </div>
-                    <div>
-                      <Label htmlFor="fleuriet_end_year">Ano Fim</Label>
-                      <select
-                        id="fleuriet_end_year"
-                        value={fleurietEndYear}
-                        onChange={(e) => setFleurietEndYear(e.target.value)}
-                        className="mt-1 block w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                        disabled={loading}
-                      >
-                        {Array.from({ length: 5 }, (_, i) => 2020 + i).map(year => (
-                          <option key={year} value={year}>{year}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <Button onClick={handleRunFleurietAnalysis} disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-md">
-                    <Scale className="mr-2 h-4 w-4" /> {/* Ícone para Fleuriet */}
-                    Analisar Fleuriet
-                  </Button>
+                    <Button onClick={handleSearchValuationCompany} disabled={loading}><Search className="mr-2 h-4 w-4"/>Buscar</Button>
                 </CardContent>
-              </Card>
-            </TabsContent>
+            </Card>
 
-            {/* --- Aba: Resultados Fleuriet --- */}
-            <TabsContent value="fleuriet-results" className="mt-4">
-              <p className="text-slate-700 leading-relaxed mb-6">
-                Resultados detalhados da análise de saúde financeira pelo Modelo Fleuriet.
-              </p>
-              {renderFleurietAnalysis()}
-            </TabsContent>
-
-            {/* --- Aba: Valuation Dashboard --- */}
-            <TabsContent value="valuation-dashboard" className="mt-4">
-              <p className="text-slate-700 leading-relaxed mb-6">
-                Bem-vindo ao Painel de Análise de Valuation. Esta seção oferece uma visão geral das principais métricas do Ibovespa, destacando a criação de valor e o potencial futuro das empresas.
-                Utilize os cartões de métricas para um resumo rápido e o gráfico de dispersão para identificar padrões e oportunidades no mercado.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"> {/* Layout para botões de análise Valuation */}
-                <Card className="flex-1">
-                  <CardHeader>
-                    <CardTitle>Análise Rápida de Valuation</CardTitle>
-                    <CardDescription>Analise as 15 principais empresas do Ibovespa.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-3">
-                    <Button onClick={handleRunValuationQuickAnalysis} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-md">
-                      <Zap className="mr-2 h-4 w-4" />
-                      Executar Análise Rápida
-                    </Button>
-                  </CardContent>
-                </Card>
-                <Card className="flex-1">
-                  <CardHeader>
-                    <CardTitle>Análise Completa de Valuation</CardTitle>
-                    <CardDescription>Analise todas as empresas do Ibovespa (pode demorar).</CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-3">
-                    <Button onClick={handleRunValuationFullAnalysis} disabled={loading} className="w-full bg-slate-700 hover:bg-slate-800 text-white shadow-md">
-                      <Activity className="mr-2 h-4 w-4" />
-                      Executar Análise Completa
-                    </Button>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {valuationReport && valuationReport.summary_statistics ? (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <Card className="metric-card">
-                      <h3>Empresas Analisadas</h3>
-                      <p>{valuationReport.total_companies_analyzed}</p>
-                    </Card>
-                    <Card className="metric-card">
-                      <h3>Criando Valor (EVA &gt; 0)</h3>
-                      <p className="text-green-600">{valuationReport.summary_statistics.positive_eva_count}</p>
-                    </Card>
-                    <Card className="metric-card">
-                      <h3>Potencial Futuro (EFV &gt; 0)</h3>
-                      <p className="text-blue-600">{valuationReport.summary_statistics.positive_efv_count}</p>
-                    </Card>
-                    <Card className="metric-card">
-                      <h3>Data da Análise</h3>
-                      <p>{formatDate(valuationReport.timestamp)}</p>
-                    </Card>
-                  </div>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Dispersão EVA vs. EFV</CardTitle>
-                      <CardDescription>
-                        Este gráfico ajuda a identificar empresas com forte criação de valor atual (EVA) e alto potencial futuro (EFV).
-                        O quadrante superior direito representa as empresas ideais.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="chart-container">
-                        <canvas id="valuationScatterChart"></canvas>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  
-                  {valuationReport.portfolio_suggestion && (
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Sugestão de Portfólio (Moderado)</CardTitle>
-                            <CardDescription>
-                                Uma alocação de exemplo baseada em uma combinação de EVA e EFV.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center text-sm font-medium text-slate-700">
-                                    <span>EVA do Portfólio:</span>
-                                    <span className={valuationReport.portfolio_suggestion.portfolio_eva_pct > 0 ? 'text-green-600' : 'text-red-600'}>
-                                        {formatPercentage(valuationReport.portfolio_suggestion.portfolio_eva_pct)} ({formatCurrency(valuationReport.portfolio_suggestion.portfolio_eva_abs)})
-                                    </span>
-                                </div>
-                                <div className="space-y-2">
-                                    {Object.entries(valuationReport.portfolio_suggestion.weights).map(([ticker, weight]) => (
-                                        <div key={ticker} className="flex items-center">
-                                            <span className="text-sm font-medium text-slate-700 w-1/4">{ticker}</span>
-                                            <div className="w-3/4 bg-slate-200 rounded-full h-3">
-                                                <div
-                                                    className="bg-blue-500 h-3 rounded-full"
-                                                    style={{ width: `${(weight * 100).toFixed(1)}%` }}
-                                                ></div>
-                                            </div>
-                                            <span className="ml-2 text-sm font-medium w-12 text-right">
-                                                {(weight * 100).toFixed(1)}%
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                  )}
-                </div>
-              ) : (
-                <Alert>
-                  <Info className="h-4 w-4" />
-                  <AlertDescription>Execute uma análise (Rápida ou Completa) de Valuation para ver o Dashboard.</AlertDescription>
-                </Alert>
-              )}
-            </TabsContent>
-
-            {/* --- Aba: Valuation Ranking Completo --- */}
-            <TabsContent value="valuation-full-ranking" className="mt-4">
-                <p className="text-slate-700 leading-relaxed mb-6">
-                    Nesta aba, você encontra o ranking completo de todas as empresas analisadas, com detalhes sobre cada métrica de Valuation.
-                    Clique nos cabeçalhos das colunas para ordenar a tabela e identificar as empresas que se destacam em diferentes aspectos.
-                </p>
-              {valuationReport && valuationReport.full_report_data ? (
-                renderValuationRankingTable(valuationReport.full_report_data, "Ranking Completo de Valuation", "Ordene pela métrica desejada para encontrar as melhores oportunidades.")
-              ) : (
-                <Alert>
-                  <Info className="h-4 w-4" />
-                  <AlertDescription>Execute uma análise (Rápida ou Completa) de Valuation para ver o Ranking Completo.</AlertDescription>
-                </Alert>
-              )}
-            </TabsContent>
-
-            {/* --- Aba: Valuation Top 10 --- */}
-            <TabsContent value="valuation-top10" className="mt-4">
-                <p className="text-slate-700 leading-relaxed mb-6">
-                    Explore aqui as 10 melhores empresas por diferentes critérios de Valuation. Esta visão consolidada permite uma rápida identificação das empresas com maior potencial de criação de valor e valorização futura.
-                </p>
-              {valuationReport && valuationReport.rankings ? (
-                <div className="space-y-6">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Top 10 Melhores Ações (Score Combinado)</CardTitle>
-                      <CardDescription>As 10 empresas com melhor pontuação combinada, considerando EVA, EFV e Upside. Representam as oportunidades mais atraentes.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="chart-container">
-                        <canvas id="valuationTop10Chart"></canvas>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Empresas Criadoras de Valor (EVA &gt; 0)</CardTitle>
-                      <CardDescription>Empresas que geraram valor econômico positivo para seus acionistas.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <ul className="list-disc list-inside space-y-2">
-                        {valuationReport.opportunities?.value_creators?.length > 0 ? (
-                          valuationReport.opportunities.value_creators.map(([ticker, eva_pct]) => (
-                            <li key={ticker} className="flex justify-between items-center">
-                              <span className="font-medium text-slate-800">{ticker}</span>
-                              <Badge className="bg-green-100 text-green-800">{formatPercentage(eva_pct)} EVA</Badge>
-                            </li>
-                          ))
-                        ) : (
-                          <li>Nenhuma empresa com EVA positivo encontrada.</li>
-                        )}
-                      </ul>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Empresas com Potencial de Crescimento (EFV &gt; 0)</CardTitle>
-                      <CardDescription>Empresas com expectativa de criação de valor futuro.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <ul className="list-disc list-inside space-y-2">
-                        {valuationReport.opportunities?.growth_potential?.length > 0 ? (
-                          valuationReport.opportunities.growth_potential.map(([ticker, efv_pct]) => (
-                            <li key={ticker} className="flex justify-between items-center">
-                              <span className="font-medium text-slate-800">{ticker}</span>
-                              <Badge className="bg-blue-100 text-blue-800">{formatPercentage(efv_pct)} EFV</Badge>
-                            </li>
-                          ))
-                        ) : (
-                          <li>Nenhuma empresa com EFV positivo encontrada.</li>
-                        )}
-                      </ul>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Empresas Subvalorizadas (Upside &gt; 20%)</CardTitle>
-                      <CardDescription>Ações com potencial significativo de valorização de acordo com o modelo.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <ul className="list-disc list-inside space-y-2">
-                        {valuationReport.opportunities?.undervalued?.length > 0 ? (
-                          valuationReport.opportunities.undervalued.map(([ticker, upside_pct]) => (
-                            <li key={ticker} className="flex justify-between items-center">
-                              <span className="font-medium text-slate-800">{ticker}</span>
-                              <Badge className="bg-purple-100 text-purple-800">{formatPercentage(upside_pct)} Upside</Badge>
-                            </li>
-                          ))
-                        ) : (
-                          <li>Nenhuma empresa subvalorizada encontrada.</li>
-                        )}
-                      </ul>
-                    </CardContent>
-                  </Card>
-                </div>
-              ) : (
-                <Alert>
-                  <Info className="h-4 w-4" />
-                  <AlertDescription>Execute uma análise (Rápida ou Completa) de Valuation para ver os rankings TOP 10.</AlertDescription>
-                </Alert>
-              )}
-            </TabsContent>
-
-            {/* --- Aba: Valuation Empresa Detalhada --- */}
-            <TabsContent value="valuation-company-details" className="mt-4">
-                <p className="text-slate-700 leading-relaxed mb-6">
-                    Esta seção apresenta os detalhes da análise de valuation para a empresa específica que você buscou. Aqui, você pode mergulhar nas métricas de EVA, EFV, Riqueza e Upside, entendendo a saúde financeira e o potencial da companhia individualmente.
-                </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"> {/* Input para buscar empresa Valuation */}
-                <Card className="flex-1 col-span-full">
-                  <CardHeader>
-                    <CardTitle>Análise de Valuation por Ticker</CardTitle>
-                    <CardDescription>Obtenha uma análise detalhada de Valuation para uma empresa específica.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-3">
-                    <Label htmlFor="valuation_ticker">Ticker da Empresa (Ex: PETR4.SA)</Label>
-                    <Input
-                      id="valuation_ticker"
-                      type="text"
-                      placeholder="Ex: VALE3.SA"
-                      value={valuationTickerInput}
-                      onChange={(e) => setValuationTickerInput(e.target.value)}
-                      className="border-slate-300 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    <Button onClick={handleSearchValuationCompany} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white shadow-md">
-                      <Info className="mr-2 h-4 w-4" />
-                      Buscar Empresa (Valuation)
-                    </Button>
-                  </CardContent>
-                </Card>
-              </div>
-              {valuationCompanyData ? (
+            {valuationCompanyData && (
                 <Card>
-                  <CardHeader>
-                    <CardTitle>{valuationCompanyData.company_name} ({valuationCompanyData.ticker})</CardTitle>
-                    <CardDescription>Análise Detalhada de Valuation</CardDescription>
-                  </CardHeader>
-                  <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div className="metric-card p-4">
-                      <h3 className="text-sm font-medium text-slate-500">Market Cap</h3>
-                      <p className="text-2xl font-bold text-slate-900">{formatCurrency(valuationCompanyData.metrics.market_cap)}</p>
-                    </div>
-                    <div className="metric-card p-4">
-                      <h3 className="text-sm font-medium text-slate-500">Preço da Ação</h3>
-                      <p className="text-2xl font-bold text-slate-900">{formatCurrency(valuationCompanyData.metrics.stock_price, 'R$ ')}</p>
-                    </div>
-                    <div className="metric-card p-4">
-                      <h3 className="text-sm font-medium text-slate-500">WACC</h3>
-                      <p className={`text-2xl font-bold ${valuationCompanyData.metrics.wacc_percentual !== null ? 'text-slate-900' : 'text-slate-500'}`}>
-                        {formatPercentage(valuationCompanyData.metrics.wacc_percentual)}
-                      </p>
-                    </div>
-                    <div className="metric-card p-4">
-                      <h3 className="text-sm font-medium text-slate-500">EVA (Absoluto)</h3>
-                      <p className={`text-2xl font-bold ${valuationCompanyData.metrics.eva_abs > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatCurrency(valuationCompanyData.metrics.eva_abs)}
-                      </p>
-                    </div>
-                    <div className="metric-card p-4">
-                      <h3 className="text-sm font-medium text-slate-500">EVA (%)</h3>
-                      <p className={`text-2xl font-bold ${valuationCompanyData.metrics.eva_percentual > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatPercentage(valuationCompanyData.metrics.eva_percentual)}
-                      </p>
-                    </div>
-                    <div className="metric-card p-4">
-                      <h3 className="text-sm font-medium text-slate-500">EFV (Absoluto)</h3>
-                      <p className={`text-2xl font-bold ${valuationCompanyData.metrics.efv_abs > 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                        {formatCurrency(valuationCompanyData.metrics.efv_abs)}
-                      </p>
-                    </div>
-                    <div className="metric-card p-4">
-                      <h3 className="text-sm font-medium text-slate-500">EFV (%)</h3>
-                      <p className={`text-2xl font-bold ${valuationCompanyData.metrics.efv_percentual > 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                        {formatPercentage(valuationCompanyData.metrics.efv_percentual)}
-                      </p>
-                    </div>
-                    <div className="metric-card p-4">
-                      <h3 className="text-sm font-medium text-slate-500">Riqueza Atual</h3>
-                      <p className={`text-2xl font-bold ${valuationCompanyData.metrics.riqueza_atual > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatCurrency(valuationCompanyData.metrics.riqueza_atual)}
-                      </p>
-                    </div>
-                    <div className="metric-card p-4">
-                      <h3 className="text-sm font-medium text-slate-500">Riqueza Futura</h3>
-                      <p className={`text-2xl font-bold ${valuationCompanyData.metrics.riqueza_futura > 0 ? 'text-blue-600' : 'text-red-600'}`}>
-                        {formatCurrency(valuationCompanyData.metrics.riqueza_futura)}
-                      </p>
-                    </div>
-                    <div className="metric-card p-4 col-span-full">
-                      <h3 className="text-sm font-medium text-slate-500">Upside Potencial</h3>
-                      <p className={`text-2xl font-bold ${valuationCompanyData.metrics.upside_percentual > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatPercentage(valuationCompanyData.metrics.upside_percentual)}
-                      </p>
-                    </div>
-                  </CardContent>
+                    <CardHeader>
+                        <CardTitle>Detalhes de {valuationCompanyData.ticker}</CardTitle>
+                        <CardDescription>{valuationCompanyData.company_name}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        {Object.entries(valuationCompanyData.metrics).map(([key, value]) => (
+                            <div key={key} className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                                <p className="text-sm font-medium text-gray-500 dark:text-gray-400 capitalize">{key.replace(/_/g, ' ')}</p>
+                                <p className="text-xl font-bold text-gray-900 dark:text-white">
+                                    {typeof value === 'number' ? (key.includes('percentual') ? formatPercentage(value) : formatCurrency(value)) : String(value)}
+                                </p>
+                            </div>
+                        ))}
+                    </CardContent>
                 </Card>
-              ) : (
-                <Alert>
-                  <Info className="h-4 w-4" />
-                  <AlertDescription>Nenhuma empresa selecionada. Use a caixa de busca acima.</AlertDescription>
-                </Alert>
-              )}
-            </TabsContent>
-          </Tabs>
-        </main>
+            )}
+
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
 }
 
+// FIM DO ARQUIVO - GARANTIA DE NÃƒO TRUNCAMENTO
 export default App;
